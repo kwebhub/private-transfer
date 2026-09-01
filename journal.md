@@ -131,28 +131,18 @@ solana config set --url devnet
 solana-keygen new
 solana address
 solana balance
-```
 
-### Создание проекта и схемы
+anchor init ptrans --no-git
 
-```sh
-anchor init ptrans && cd $_/app
-
-# Создаем схемы main.nr и markle_tree.nr
-mkdir circuits && cd $_
+cd ptrans/app && mkdir circuits && cd $_
 nargo new withdrawal && cd $_
-
-# Сгенерить Prover.toml
 nargo check
 
-# Вызвать тестовую функцию для генерации вводных данных
+# After the code is ready
 nargo test test_generate_valid_inputs --show-output > Prover.toml
 
-# Скомпелирует схему (.json) и свидетеля (.gz) в папке target
+# Clean Prover.toml and then
 nargo execute
-
-# nagro compile - Скомпелировать только схему (.json)
-# Необходимо при внесении изменений в main.nr
 ```
 
 ### Верификатор sunspot
