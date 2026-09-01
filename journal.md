@@ -124,23 +124,13 @@ ZK-схема внутри себя (не раскрывая данные бло
 - создал и сбилдил бекэнд
 - проверил функционал снятия средств
 
-### Настройка кошелька Solana
+Настройка кошелька Solana
 
 ```sh
-# Задать конфигурацию на тестовую сеть для деплоя
 solana config set --url devnet
-
-# Генерация нового кошелька (или используйте существующий)
-solana-keygen new --outfile ~/.config/solana/id.json
-
-# Получение адреса
+solana-keygen new
 solana address
-
-# Запрос SOL на devnet
-solana airdrop 2 $(solana address) --url devnet
-
-# Проверка баланса
-solana balance --url devnet
+solana balance
 ```
 
 ### Создание проекта и схемы
