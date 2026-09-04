@@ -1,0 +1,356 @@
+import 'fs';
+import { CodamaError, CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, CODAMA_ERROR__VISITORS__RENDER_MAP_KEY_NOT_FOUND } from '@codama/errors';
+import 'path';
+
+// src/core/casing.ts
+function capitalize(str) {
+  if (str.length === 0) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+function titleCase(str) {
+  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(str)) {
+    return str.toLowerCase().split("_").map(capitalize).join(" ");
+  }
+  return str.replace(/([A-Z])/g, " $1").split(/[^a-zA-Z0-9]+/).filter((word) => word.length > 0).map(capitalize).join(" ");
+}
+function pascalCase(str) {
+  return titleCase(str).split(" ").join("");
+}
+function camelCase(str) {
+  if (str.length === 0) return str;
+  const pascalStr = pascalCase(str);
+  return pascalStr.charAt(0).toLowerCase() + pascalStr.slice(1);
+}
+function kebabCase(str) {
+  return titleCase(str).split(" ").join("-").toLowerCase();
+}
+function snakeCase(str) {
+  return titleCase(str).split(" ").join("_").toLowerCase();
+}
+
+// src/core/createFragmentTemplate.ts
+function createFragmentTemplate(template, items, isFragment2, mergeFragments2) {
+  const fragments = items.filter(isFragment2);
+  const zippedItems = items.map((item, i) => {
+    const itemPrefix = template[i];
+    if (typeof item === "undefined") return itemPrefix;
+    if (isFragment2(item)) return itemPrefix + item.content;
+    return itemPrefix + String(item);
+  });
+  return mergeFragments2(fragments, () => zippedItems.join("") + template[template.length - 1]);
+}
+function joinPath(...paths) {
+  {
+    return paths.join("/").replace(/\/+/g, "/");
+  }
+}
+function pathDirectory(path) {
+  {
+    return path.substring(0, path.lastIndexOf("/"));
+  }
+}
+function pathBasename(path) {
+  {
+    const slash = path.lastIndexOf("/");
+    return slash >= 0 ? path.substring(slash + 1) : path;
+  }
+}
+function relativePath(from, to) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "relative" });
+  }
+}
+
+// src/core/fs.ts
+function createDirectory(path) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "mkdirSync" });
+  }
+}
+function deleteDirectory(path) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "rmSync" });
+  }
+}
+function writeFile(path, content) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "writeFileSync" });
+  }
+}
+function fileExists(path) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "existsSync" });
+  }
+}
+function readFile(path) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "readFileSync" });
+  }
+}
+function readJson(path) {
+  return JSON.parse(readFile());
+}
+
+// src/core/setFragmentContent.ts
+function setFragmentContent(fragment2, content) {
+  return Object.freeze({ ...fragment2, content });
+}
+
+// src/core/mapFragmentContent.ts
+function mapFragmentContent(fragment2, mapContent) {
+  return setFragmentContent(fragment2, mapContent(fragment2.content));
+}
+async function mapFragmentContentAsync(fragment2, mapContent) {
+  return setFragmentContent(fragment2, await mapContent(fragment2.content));
+}
+function createRenderMap(pathOrEntries, content) {
+  let entries = [];
+  if (typeof pathOrEntries === "string" && content !== void 0) {
+    entries = [[pathOrEntries, content]];
+  } else if (typeof pathOrEntries === "object" && pathOrEntries !== null) {
+    entries = Object.entries(pathOrEntries).flatMap(
+      ([key, value]) => value === void 0 ? [] : [[key, value]]
+    );
+  }
+  return Object.freeze(new Map(entries));
+}
+function addToRenderMap(renderMap, path, content) {
+  return mergeRenderMaps([renderMap, createRenderMap(path, content)]);
+}
+function removeFromRenderMap(renderMap, path) {
+  const newMap = new Map(renderMap);
+  newMap.delete(path);
+  return Object.freeze(newMap);
+}
+function mergeRenderMaps(renderMaps) {
+  if (renderMaps.length === 0) return createRenderMap();
+  if (renderMaps.length === 1) return renderMaps[0];
+  const merged = new Map(renderMaps[0]);
+  for (const map of renderMaps.slice(1)) {
+    for (const [key, value] of map) {
+      merged.set(key, value);
+    }
+  }
+  return Object.freeze(merged);
+}
+function mapRenderMapFragment(renderMap, fn) {
+  return Object.freeze(new Map([...renderMap.entries()].map(([key, value]) => [key, fn(value, key)])));
+}
+async function mapRenderMapFragmentAsync(renderMap, fn) {
+  return Object.freeze(
+    new Map(
+      await Promise.all(
+        [...renderMap.entries()].map(async ([key, value]) => [key, await fn(value, key)])
+      )
+    )
+  );
+}
+function mapRenderMapContent(renderMap, fn) {
+  return mapRenderMapFragment(
+    renderMap,
+    (fragment2, path) => mapFragmentContent(fragment2, (content) => fn(content, path))
+  );
+}
+async function mapRenderMapContentAsync(renderMap, fn) {
+  return await mapRenderMapFragmentAsync(
+    renderMap,
+    (fragment2, path) => mapFragmentContentAsync(fragment2, (content) => fn(content, path))
+  );
+}
+function getFromRenderMap(renderMap, path) {
+  const value = renderMap.get(path);
+  if (value === void 0) {
+    throw new CodamaError(CODAMA_ERROR__VISITORS__RENDER_MAP_KEY_NOT_FOUND, { key: path });
+  }
+  return value;
+}
+function renderMapContains(renderMap, path, value) {
+  const { content } = getFromRenderMap(renderMap, path);
+  return typeof value === "string" ? content.includes(value) : value.test(content);
+}
+function writeRenderMap(renderMap, basePath) {
+  renderMap.forEach(({ content }, relativePath2) => {
+    writeFile(joinPath(basePath, relativePath2));
+  });
+}
+
+// src/javascript/ImportMap.ts
+function createImportMap() {
+  return Object.freeze(/* @__PURE__ */ new Map());
+}
+function parseImportInput(input) {
+  const matches = /^(type )?([^ ]+)(?: as (.+))?$/.exec(input);
+  if (!matches) {
+    return Object.freeze({
+      importedIdentifier: input,
+      isType: false,
+      usedIdentifier: input
+    });
+  }
+  const [, isType, name, alias] = matches;
+  return Object.freeze({
+    importedIdentifier: name,
+    isType: !!isType,
+    usedIdentifier: alias ?? name
+  });
+}
+
+// src/javascript/mergeImportMaps.ts
+function mergeImportMaps(importMaps) {
+  if (importMaps.length === 0) return createImportMap();
+  if (importMaps.length === 1) return importMaps[0];
+  const merged = new Map(importMaps[0]);
+  for (const map of importMaps.slice(1)) {
+    for (const [module, imports] of map) {
+      const moduleMap = new Map(
+        merged.get(module) ?? /* @__PURE__ */ new Map()
+      );
+      for (const [usedIdentifier, info] of imports) {
+        const existing = moduleMap.get(usedIdentifier);
+        if (preferIncoming(existing, info)) {
+          moduleMap.set(usedIdentifier, info);
+        }
+      }
+      merged.set(module, moduleMap);
+    }
+  }
+  return Object.freeze(merged);
+}
+function preferIncoming(existing, incoming) {
+  if (!existing) return true;
+  return existing.importedIdentifier === incoming.importedIdentifier && existing.isType && !incoming.isType;
+}
+
+// src/javascript/addToImportMap.ts
+function addToImportMap(importMap, module, imports) {
+  if (imports.length === 0) return importMap;
+  const moduleMap = /* @__PURE__ */ new Map();
+  for (const input of imports) {
+    const info = parseImportInput(input);
+    const existing = moduleMap.get(info.usedIdentifier);
+    if (preferIncoming(existing, info)) {
+      moduleMap.set(info.usedIdentifier, info);
+    }
+  }
+  return mergeImportMaps([importMap, /* @__PURE__ */ new Map([[module, moduleMap]])]);
+}
+
+// src/javascript/removeFromImportMap.ts
+function removeFromImportMap(importMap, module, usedIdentifiers) {
+  const next = new Map(importMap);
+  const moduleMap = new Map(next.get(module));
+  for (const id of usedIdentifiers) moduleMap.delete(id);
+  if (moduleMap.size === 0) {
+    next.delete(module);
+  } else {
+    next.set(module, moduleMap);
+  }
+  return Object.freeze(next);
+}
+
+// src/javascript/resolveImportMap.ts
+function resolveImportMap(importMap, dependencies) {
+  if (importMap.size === 0) return importMap;
+  const perModule = [...importMap.entries()].map(
+    ([module, identifiers]) => {
+      const resolvedModule = dependencies[module] ?? module;
+      return /* @__PURE__ */ new Map([[resolvedModule, identifiers]]);
+    }
+  );
+  return mergeImportMaps(perModule);
+}
+
+// src/javascript/getExternalDependencies.ts
+function getExternalDependencies(importMap, dependencies = {}) {
+  const resolved = resolveImportMap(importMap, dependencies);
+  const roots = /* @__PURE__ */ new Set();
+  for (const module of resolved.keys()) {
+    if (module.startsWith(".")) continue;
+    const segments = module.split("/");
+    const rootSegmentCount = module.startsWith("@") ? 2 : 1;
+    roots.add(segments.slice(0, rootSegmentCount).join("/"));
+  }
+  return roots;
+}
+
+// src/javascript/importMapToString.ts
+function importMapToString(importMap, dependencies = {}) {
+  const resolved = resolveImportMap(importMap, dependencies);
+  return [...resolved.entries()].sort(([a], [b]) => {
+    const aRelative = a.startsWith(".") ? 1 : 0;
+    const bRelative = b.startsWith(".") ? 1 : 0;
+    if (aRelative !== bRelative) return aRelative - bRelative;
+    return a.localeCompare(b);
+  }).map(([module, imports]) => {
+    const infos = [...imports.values()];
+    const allTypeOnly = infos.length > 0 && infos.every((info) => info.isType);
+    const renderedIds = infos.map((info) => formatImportInfo(info, allTypeOnly)).sort((a, b) => a.localeCompare(b)).join(", ");
+    const prefix = allTypeOnly ? "import type " : "import ";
+    return `${prefix}{ ${renderedIds} } from '${module}';`;
+  }).join("\n");
+}
+function formatImportInfo(info, blockIsTypeOnly) {
+  const alias = info.importedIdentifier !== info.usedIdentifier ? ` as ${info.usedIdentifier}` : "";
+  const typePrefix = info.isType && !blockIsTypeOnly ? "type " : "";
+  return `${typePrefix}${info.importedIdentifier}${alias}`;
+}
+
+// src/javascript/fragment.ts
+function isFragment(value) {
+  return typeof value === "object" && value !== null && "content" in value && "imports" in value;
+}
+function fragment(template, ...items) {
+  return createFragmentTemplate(template, items, isFragment, mergeFragments);
+}
+function mergeFragments(fragments, mergeContent) {
+  const filtered = fragments.filter((f) => f !== void 0);
+  return Object.freeze({
+    content: mergeContent(filtered.map((f) => f.content)),
+    imports: mergeImportMaps(filtered.map((f) => f.imports))
+  });
+}
+function use(importInput, module) {
+  const info = parseImportInput(importInput);
+  const empty = Object.freeze({ content: info.usedIdentifier, imports: createImportMap() });
+  return addFragmentImports(empty, module, [importInput]);
+}
+function addFragmentImports(fragment2, module, imports) {
+  return Object.freeze({
+    ...fragment2,
+    imports: addToImportMap(fragment2.imports, module, imports)
+  });
+}
+function mergeFragmentImports(fragment2, importMaps) {
+  return Object.freeze({
+    ...fragment2,
+    imports: mergeImportMaps([fragment2.imports, ...importMaps])
+  });
+}
+function removeFragmentImports(fragment2, module, usedIdentifiers) {
+  return Object.freeze({
+    ...fragment2,
+    imports: removeFromImportMap(fragment2.imports, module, usedIdentifiers)
+  });
+}
+
+// src/javascript/getDocblockFragment.ts
+function getDocblockFragment(lines, options = {}) {
+  if (!lines || lines.length === 0) return void 0;
+  const lineJump = options.withLineJump ? "\n" : "";
+  const safeLines = lines.map(defang);
+  if (safeLines.length === 1) return fragment`/** ${safeLines[0]} */${lineJump}`;
+  const prefixedLines = safeLines.map((line) => line ? ` * ${line}` : " *");
+  return fragment`/**\n${prefixedLines.join("\n")}\n */${lineJump}`;
+}
+function defang(line) {
+  return line.replace(/\*\//g, "*\\/");
+}
+
+// src/javascript/getExportAllFragment.ts
+function getExportAllFragment(module) {
+  return fragment`export * from '${module}';`;
+}
+
+export { addFragmentImports, addToImportMap, addToRenderMap, camelCase, capitalize, createDirectory, createFragmentTemplate, createImportMap, createRenderMap, deleteDirectory, fileExists, fragment, getDocblockFragment, getExportAllFragment, getExternalDependencies, getFromRenderMap, importMapToString, isFragment, joinPath, kebabCase, mapFragmentContent, mapFragmentContentAsync, mapRenderMapContent, mapRenderMapContentAsync, mapRenderMapFragment, mapRenderMapFragmentAsync, mergeFragmentImports, mergeFragments, mergeImportMaps, mergeRenderMaps, parseImportInput, pascalCase, pathBasename, pathDirectory, preferIncoming, readFile, readJson, relativePath, removeFragmentImports, removeFromImportMap, removeFromRenderMap, renderMapContains, resolveImportMap, setFragmentContent, snakeCase, titleCase, use, writeFile, writeRenderMap };
+//# sourceMappingURL=javascript.react-native.mjs.map
+//# sourceMappingURL=javascript.react-native.mjs.map

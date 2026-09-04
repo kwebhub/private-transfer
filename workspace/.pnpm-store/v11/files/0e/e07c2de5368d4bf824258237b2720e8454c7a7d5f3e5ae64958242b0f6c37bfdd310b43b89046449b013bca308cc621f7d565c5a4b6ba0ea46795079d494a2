@@ -1,0 +1,3 @@
+/** The presentation forms a number may take. Raw rendering is expressed by the absence of a display attribute. */
+export declare const NUMBER_DISPLAY_NODE_KINDS: ("amountNumberDisplayNode" | "dateTimeNumberDisplayNode" | "durationNumberDisplayNode")[];
+//# sourceMappingURL=NumberDisplayNode.d.ts.map

@@ -1,0 +1,3 @@
+/** Every type node that can be used as a top-level type. */
+export declare const STANDALONE_TYPE_NODE_KINDS: ("amountTypeNode" | "arrayTypeNode" | "booleanTypeNode" | "bytesTypeNode" | "dateTimeTypeNode" | "enumTypeNode" | "fixedSizeTypeNode" | "hiddenPrefixTypeNode" | "hiddenSuffixTypeNode" | "mapTypeNode" | "numberTypeNode" | "optionTypeNode" | "postOffsetTypeNode" | "preOffsetTypeNode" | "publicKeyTypeNode" | "remainderOptionTypeNode" | "sentinelTypeNode" | "setTypeNode" | "sizePrefixTypeNode" | "solAmountTypeNode" | "stringTypeNode" | "structTypeNode" | "tupleTypeNode" | "zeroableOptionTypeNode")[];
+//# sourceMappingURL=StandaloneTypeNode.d.ts.map

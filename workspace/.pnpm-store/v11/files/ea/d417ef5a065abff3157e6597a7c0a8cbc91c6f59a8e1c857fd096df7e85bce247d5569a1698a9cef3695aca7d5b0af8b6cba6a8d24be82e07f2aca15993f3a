@@ -1,0 +1,3 @@
+/** Every value node that can be used as a top-level value. */
+export declare const STANDALONE_VALUE_NODE_KINDS: ("arrayValueNode" | "booleanValueNode" | "bytesValueNode" | "constantValueNode" | "enumValueNode" | "injectedValueNode" | "mapValueNode" | "noneValueNode" | "numberValueNode" | "publicKeyValueNode" | "setValueNode" | "someValueNode" | "stringValueNode" | "structValueNode" | "tupleValueNode")[];
+//# sourceMappingURL=StandaloneValueNode.d.ts.map

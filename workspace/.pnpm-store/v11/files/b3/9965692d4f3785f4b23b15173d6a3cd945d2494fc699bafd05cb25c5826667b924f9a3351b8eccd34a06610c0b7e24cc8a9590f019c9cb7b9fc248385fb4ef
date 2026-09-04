@@ -1,0 +1,25 @@
+'use strict';
+
+var fragments = require('@codama/fragments');
+var visitorsCore = require('@codama/visitors-core');
+
+// src/index.ts
+function writeRenderMapVisitor(visitor, basePath) {
+  return visitorsCore.mapVisitor(visitor, (renderMap) => fragments.writeRenderMap(renderMap, basePath));
+}
+function writeIdlVisitor(path) {
+  return visitorsCore.rootNodeVisitor((root) => {
+    fragments.writeFile(path, JSON.stringify(root, null, 2));
+  });
+}
+
+exports.writeIdlVisitor = writeIdlVisitor;
+exports.writeRenderMapVisitor = writeRenderMapVisitor;
+Object.keys(fragments).forEach(function (k) {
+  if (k !== 'default' && !Object.prototype.hasOwnProperty.call(exports, k)) Object.defineProperty(exports, k, {
+    enumerable: true,
+    get: function () { return fragments[k]; }
+  });
+});
+//# sourceMappingURL=index.node.cjs.map
+//# sourceMappingURL=index.node.cjs.map

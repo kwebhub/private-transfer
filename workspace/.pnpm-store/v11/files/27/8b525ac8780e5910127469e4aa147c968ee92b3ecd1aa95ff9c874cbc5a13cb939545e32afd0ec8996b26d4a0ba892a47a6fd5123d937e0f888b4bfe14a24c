@@ -1,0 +1,17 @@
+import { writeRenderMap, writeFile } from '@codama/fragments';
+export * from '@codama/fragments';
+import { mapVisitor, rootNodeVisitor } from '@codama/visitors-core';
+
+// src/index.ts
+function writeRenderMapVisitor(visitor, basePath) {
+  return mapVisitor(visitor, (renderMap) => writeRenderMap(renderMap, basePath));
+}
+function writeIdlVisitor(path) {
+  return rootNodeVisitor((root) => {
+    writeFile(path, JSON.stringify(root, null, 2));
+  });
+}
+
+export { writeIdlVisitor, writeRenderMapVisitor };
+//# sourceMappingURL=index.browser.mjs.map
+//# sourceMappingURL=index.browser.mjs.map

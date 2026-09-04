@@ -1,0 +1,7 @@
+import { TypeNode, ValueNode } from '@codama/nodes';
+export declare function hex(bytes: number[] | Uint8Array): string;
+export declare function parseConstantValue(valueString: string, type: TypeNode): {
+    type: TypeNode;
+    value: ValueNode;
+};
+//# sourceMappingURL=utils.d.ts.map

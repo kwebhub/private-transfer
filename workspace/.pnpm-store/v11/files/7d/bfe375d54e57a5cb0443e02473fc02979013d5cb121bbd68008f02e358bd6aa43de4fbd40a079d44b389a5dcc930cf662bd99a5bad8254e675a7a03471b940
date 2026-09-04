@@ -1,0 +1,6 @@
+/**
+ * Anything that can be used as the input value for an instruction account or argument default.
+ * Covers concrete values, contextual references, and program links.
+ */
+export declare const INSTRUCTION_INPUT_VALUE_NODE_KINDS: ("accountBumpValueNode" | "accountFieldValueNode" | "accountValueNode" | "argumentValueNode" | "arrayValueNode" | "booleanValueNode" | "bytesValueNode" | "conditionalValueNode" | "constantValueNode" | "enumValueNode" | "identityValueNode" | "injectedValueNode" | "mapValueNode" | "noneValueNode" | "numberValueNode" | "payerValueNode" | "pdaValueNode" | "programIdValueNode" | "programLinkNode" | "publicKeyValueNode" | "resolverValueNode" | "setValueNode" | "someValueNode" | "stringValueNode" | "structValueNode" | "tupleValueNode")[];
+//# sourceMappingURL=InstructionInputValueNode.d.ts.map

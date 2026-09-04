@@ -1,0 +1,5 @@
+import { Fragment, RenderScope } from '../utils';
+export declare function getIndexPageFragment(items: {
+    name: string;
+}[], scope: Pick<RenderScope, 'getImportPath'>): Fragment | undefined;
+//# sourceMappingURL=indexPage.d.ts.map

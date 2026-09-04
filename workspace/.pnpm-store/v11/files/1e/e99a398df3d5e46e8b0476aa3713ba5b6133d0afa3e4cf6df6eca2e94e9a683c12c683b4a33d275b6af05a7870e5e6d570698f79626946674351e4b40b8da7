@@ -1,0 +1,179 @@
+import 'fs';
+import { CodamaError, CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, CODAMA_ERROR__VISITORS__RENDER_MAP_KEY_NOT_FOUND } from '@codama/errors';
+import 'path';
+
+// src/core/casing.ts
+function capitalize(str) {
+  if (str.length === 0) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+function titleCase(str) {
+  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(str)) {
+    return str.toLowerCase().split("_").map(capitalize).join(" ");
+  }
+  return str.replace(/([A-Z])/g, " $1").split(/[^a-zA-Z0-9]+/).filter((word) => word.length > 0).map(capitalize).join(" ");
+}
+function pascalCase(str) {
+  return titleCase(str).split(" ").join("");
+}
+function camelCase(str) {
+  if (str.length === 0) return str;
+  const pascalStr = pascalCase(str);
+  return pascalStr.charAt(0).toLowerCase() + pascalStr.slice(1);
+}
+function kebabCase(str) {
+  return titleCase(str).split(" ").join("-").toLowerCase();
+}
+function snakeCase(str) {
+  return titleCase(str).split(" ").join("_").toLowerCase();
+}
+
+// src/core/createFragmentTemplate.ts
+function createFragmentTemplate(template, items, isFragment, mergeFragments) {
+  const fragments = items.filter(isFragment);
+  const zippedItems = items.map((item, i) => {
+    const itemPrefix = template[i];
+    if (typeof item === "undefined") return itemPrefix;
+    if (isFragment(item)) return itemPrefix + item.content;
+    return itemPrefix + String(item);
+  });
+  return mergeFragments(fragments, () => zippedItems.join("") + template[template.length - 1]);
+}
+function joinPath(...paths) {
+  {
+    return paths.join("/").replace(/\/+/g, "/");
+  }
+}
+function pathDirectory(path) {
+  {
+    return path.substring(0, path.lastIndexOf("/"));
+  }
+}
+function pathBasename(path) {
+  {
+    const slash = path.lastIndexOf("/");
+    return slash >= 0 ? path.substring(slash + 1) : path;
+  }
+}
+function relativePath(from, to) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "relative" });
+  }
+}
+
+// src/core/fs.ts
+function createDirectory(path) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "mkdirSync" });
+  }
+}
+function deleteDirectory(path) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "rmSync" });
+  }
+}
+function writeFile(path, content) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "writeFileSync" });
+  }
+}
+function fileExists(path) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "existsSync" });
+  }
+}
+function readFile(path) {
+  {
+    throw new CodamaError(CODAMA_ERROR__NODE_FILESYSTEM_FUNCTION_UNAVAILABLE, { fsFunction: "readFileSync" });
+  }
+}
+function readJson(path) {
+  return JSON.parse(readFile());
+}
+
+// src/core/setFragmentContent.ts
+function setFragmentContent(fragment, content) {
+  return Object.freeze({ ...fragment, content });
+}
+
+// src/core/mapFragmentContent.ts
+function mapFragmentContent(fragment, mapContent) {
+  return setFragmentContent(fragment, mapContent(fragment.content));
+}
+async function mapFragmentContentAsync(fragment, mapContent) {
+  return setFragmentContent(fragment, await mapContent(fragment.content));
+}
+function createRenderMap(pathOrEntries, content) {
+  let entries = [];
+  if (typeof pathOrEntries === "string" && content !== void 0) {
+    entries = [[pathOrEntries, content]];
+  } else if (typeof pathOrEntries === "object" && pathOrEntries !== null) {
+    entries = Object.entries(pathOrEntries).flatMap(
+      ([key, value]) => value === void 0 ? [] : [[key, value]]
+    );
+  }
+  return Object.freeze(new Map(entries));
+}
+function addToRenderMap(renderMap, path, content) {
+  return mergeRenderMaps([renderMap, createRenderMap(path, content)]);
+}
+function removeFromRenderMap(renderMap, path) {
+  const newMap = new Map(renderMap);
+  newMap.delete(path);
+  return Object.freeze(newMap);
+}
+function mergeRenderMaps(renderMaps) {
+  if (renderMaps.length === 0) return createRenderMap();
+  if (renderMaps.length === 1) return renderMaps[0];
+  const merged = new Map(renderMaps[0]);
+  for (const map of renderMaps.slice(1)) {
+    for (const [key, value] of map) {
+      merged.set(key, value);
+    }
+  }
+  return Object.freeze(merged);
+}
+function mapRenderMapFragment(renderMap, fn) {
+  return Object.freeze(new Map([...renderMap.entries()].map(([key, value]) => [key, fn(value, key)])));
+}
+async function mapRenderMapFragmentAsync(renderMap, fn) {
+  return Object.freeze(
+    new Map(
+      await Promise.all(
+        [...renderMap.entries()].map(async ([key, value]) => [key, await fn(value, key)])
+      )
+    )
+  );
+}
+function mapRenderMapContent(renderMap, fn) {
+  return mapRenderMapFragment(
+    renderMap,
+    (fragment, path) => mapFragmentContent(fragment, (content) => fn(content, path))
+  );
+}
+async function mapRenderMapContentAsync(renderMap, fn) {
+  return await mapRenderMapFragmentAsync(
+    renderMap,
+    (fragment, path) => mapFragmentContentAsync(fragment, (content) => fn(content, path))
+  );
+}
+function getFromRenderMap(renderMap, path) {
+  const value = renderMap.get(path);
+  if (value === void 0) {
+    throw new CodamaError(CODAMA_ERROR__VISITORS__RENDER_MAP_KEY_NOT_FOUND, { key: path });
+  }
+  return value;
+}
+function renderMapContains(renderMap, path, value) {
+  const { content } = getFromRenderMap(renderMap, path);
+  return typeof value === "string" ? content.includes(value) : value.test(content);
+}
+function writeRenderMap(renderMap, basePath) {
+  renderMap.forEach(({ content }, relativePath2) => {
+    writeFile(joinPath(basePath, relativePath2));
+  });
+}
+
+export { addToRenderMap, camelCase, capitalize, createDirectory, createFragmentTemplate, createRenderMap, deleteDirectory, fileExists, getFromRenderMap, joinPath, kebabCase, mapFragmentContent, mapFragmentContentAsync, mapRenderMapContent, mapRenderMapContentAsync, mapRenderMapFragment, mapRenderMapFragmentAsync, mergeRenderMaps, pascalCase, pathBasename, pathDirectory, readFile, readJson, relativePath, removeFromRenderMap, renderMapContains, setFragmentContent, snakeCase, titleCase, writeFile, writeRenderMap };
+//# sourceMappingURL=index.react-native.mjs.map
+//# sourceMappingURL=index.react-native.mjs.map

@@ -1,0 +1,4 @@
+import { ConstantNode } from '@codama/nodes';
+import { IdlV00Constant } from './idl';
+export declare function constantNodeFromAnchorV00(idl: Partial<IdlV00Constant>): ConstantNode;
+//# sourceMappingURL=ConstantNode.d.ts.map

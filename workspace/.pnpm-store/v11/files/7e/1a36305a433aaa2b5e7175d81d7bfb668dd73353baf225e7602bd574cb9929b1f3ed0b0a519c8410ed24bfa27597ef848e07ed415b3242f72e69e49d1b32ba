@@ -1,0 +1,6 @@
+import { ProgramNode } from '@codama/nodes';
+import { Fragment, RenderScope } from '../utils';
+export declare function getProgramAccountsFragment(scope: Pick<RenderScope, 'erasableSyntax' | 'nameApi' | 'typeManifestVisitor'> & {
+    programNode: ProgramNode;
+}): Fragment | undefined;
+//# sourceMappingURL=programAccounts.d.ts.map

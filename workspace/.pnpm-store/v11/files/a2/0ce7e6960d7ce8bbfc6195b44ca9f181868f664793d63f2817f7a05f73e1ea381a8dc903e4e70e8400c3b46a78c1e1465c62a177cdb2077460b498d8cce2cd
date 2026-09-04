@@ -1,0 +1,4 @@
+import { EventNode } from '@codama/nodes';
+import { IdlV00Event } from './idl';
+export declare function eventNodeFromAnchorV00(idl: IdlV00Event): EventNode;
+//# sourceMappingURL=EventNode.d.ts.map

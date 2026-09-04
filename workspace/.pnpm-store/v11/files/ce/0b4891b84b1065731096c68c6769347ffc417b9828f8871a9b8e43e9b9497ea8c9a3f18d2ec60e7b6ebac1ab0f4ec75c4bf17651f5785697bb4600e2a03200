@@ -1,0 +1,10 @@
+import type { AccountNode, ConstantNode, DefinedTypeNode, ErrorNode, EventNode, InstructionNode, PdaNode, ProgramNode } from '@codama/node-types';
+import { DocsInput } from '../shared';
+export type ProgramNodeInput<TPdas extends Array<PdaNode> | undefined = Array<PdaNode> | undefined, TAccounts extends Array<AccountNode> | undefined = Array<AccountNode> | undefined, TInstructions extends Array<InstructionNode> | undefined = Array<InstructionNode> | undefined, TDefinedTypes extends Array<DefinedTypeNode> | undefined = Array<DefinedTypeNode> | undefined, TErrors extends Array<ErrorNode> | undefined = Array<ErrorNode> | undefined, TEvents extends Array<EventNode> | undefined = Array<EventNode> | undefined, TConstants extends Array<ConstantNode> | undefined = Array<ConstantNode> | undefined> = Omit<Partial<ProgramNode<TPdas, TAccounts, TInstructions, TDefinedTypes, TErrors, TEvents, TConstants>>, 'docs' | 'kind' | 'name' | 'publicKey'> & {
+    readonly name: string;
+    readonly docs?: DocsInput;
+    readonly publicKey: ProgramNode['publicKey'];
+};
+/** A Solana program: its identity, version, accounts, instructions, defined types, PDAs, events, errors, and constants. */
+export declare function programNode<const TPdas extends Array<PdaNode> | undefined = [], const TAccounts extends Array<AccountNode> | undefined = [], const TInstructions extends Array<InstructionNode> | undefined = [], const TDefinedTypes extends Array<DefinedTypeNode> | undefined = [], const TErrors extends Array<ErrorNode> | undefined = [], const TEvents extends Array<EventNode> | undefined = [], const TConstants extends Array<ConstantNode> | undefined = []>(input: ProgramNodeInput<TPdas, TAccounts, TInstructions, TDefinedTypes, TErrors, TEvents, TConstants>): ProgramNode<TPdas, TAccounts, TInstructions, TDefinedTypes, TErrors, TEvents, TConstants>;
+//# sourceMappingURL=ProgramNode.d.ts.map

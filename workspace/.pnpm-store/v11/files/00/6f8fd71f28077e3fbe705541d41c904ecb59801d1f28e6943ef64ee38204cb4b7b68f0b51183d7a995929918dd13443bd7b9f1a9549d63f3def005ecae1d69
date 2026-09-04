@@ -1,0 +1,5 @@
+import { ConstantNode } from '@codama/nodes';
+import { IdlV01Const } from './idl';
+import { GenericsV01 } from './unwrapGenerics';
+export declare function constantNodeFromAnchorV01(idl: Partial<IdlV01Const>, generics: GenericsV01): ConstantNode;
+//# sourceMappingURL=ConstantNode.d.ts.map

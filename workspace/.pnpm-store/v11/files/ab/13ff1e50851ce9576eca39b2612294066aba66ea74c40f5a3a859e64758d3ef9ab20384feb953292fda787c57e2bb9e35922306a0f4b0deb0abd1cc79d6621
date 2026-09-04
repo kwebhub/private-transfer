@@ -1,0 +1,14 @@
+import { NodeKind } from '@codama/nodes';
+/**
+ * Strip docs from every node the visitor passes over.
+ *
+ * Constructors in `@codama/nodes` omit the `docs` attribute entirely
+ * when its value would be empty (matching the Rust side and avoiding
+ * gratuitous `docs: []` noise in encoded IDLs). This visitor follows
+ * the same convention — it removes the `docs` key altogether rather
+ * than blanking it to `[]`.
+ */
+export declare function removeDocsVisitor<TNodeKind extends NodeKind = NodeKind>(options?: {
+    keys?: TNodeKind[];
+}): import("./visitor").Visitor<import("@codama/node-types").Node, TNodeKind>;
+//# sourceMappingURL=removeDocsVisitor.d.ts.map

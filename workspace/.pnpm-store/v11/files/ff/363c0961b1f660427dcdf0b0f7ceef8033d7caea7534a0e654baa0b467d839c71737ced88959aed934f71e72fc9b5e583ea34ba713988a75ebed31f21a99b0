@@ -1,0 +1,1 @@
+{"version":3,"file":"StructTypeNode.d.ts","sourceRoot":"","sources":["../../../../src/generated/typeNodes/StructTypeNode.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,mBAAmB,EAAE,cAAc,EAAE,MAAM,oBAAoB,CAAC;AAE9E,qHAAqH;AACrH,wBAAgB,cAAc,CAAC,KAAK,CAAC,OAAO,SAAS,KAAK,CAAC,mBAAmB,CAAC,GAAG,SAAS,EACvF,MAAM,EAAE,OAAO,GAChB,cAAc,CAAC,OAAO,CAAC,CAOzB"}

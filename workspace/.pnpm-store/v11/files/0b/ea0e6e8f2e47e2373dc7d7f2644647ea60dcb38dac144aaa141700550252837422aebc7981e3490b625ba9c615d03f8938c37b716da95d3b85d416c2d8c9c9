@@ -1,0 +1,3 @@
+/** The value forms a `constantPdaSeedNode` may carry — either a literal value or the program ID placeholder. */
+export declare const CONSTANT_PDA_SEED_VALUE_KINDS: ("arrayValueNode" | "booleanValueNode" | "bytesValueNode" | "constantValueNode" | "enumValueNode" | "injectedValueNode" | "mapValueNode" | "noneValueNode" | "numberValueNode" | "programIdValueNode" | "publicKeyValueNode" | "setValueNode" | "someValueNode" | "stringValueNode" | "structValueNode" | "tupleValueNode")[];
+//# sourceMappingURL=ConstantPdaSeedValue.d.ts.map

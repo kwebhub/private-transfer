@@ -1,0 +1,5 @@
+import { RenderMap } from '@codama/renderers-core';
+import { Visitor } from '@codama/visitors-core';
+import { Fragment, GetRenderMapOptions } from '../utils';
+export declare function getRenderMapVisitor(options?: GetRenderMapOptions): Visitor<RenderMap<Fragment>, 'accountNode' | 'definedTypeNode' | 'eventNode' | 'instructionNode' | 'pdaNode' | 'programNode' | 'rootNode'>;
+//# sourceMappingURL=getRenderMapVisitor.d.ts.map

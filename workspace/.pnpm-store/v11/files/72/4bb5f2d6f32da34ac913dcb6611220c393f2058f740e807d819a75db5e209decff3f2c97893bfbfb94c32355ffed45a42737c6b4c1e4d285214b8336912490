@@ -1,0 +1,3 @@
+/** The value forms accepted by an `instructionByteDeltaNode`. */
+export declare const INSTRUCTION_BYTE_DELTA_VALUE_KINDS: ("accountLinkNode" | "argumentValueNode" | "numberValueNode" | "resolverValueNode")[];
+//# sourceMappingURL=InstructionByteDeltaValue.d.ts.map

@@ -1,0 +1,15 @@
+import { InstructionAccountNodeInput, InstructionArgumentNodeInput, InstructionInputValueNode, InstructionNodeInput } from '@codama/nodes';
+export type InstructionUpdates = Partial<Omit<InstructionNodeInput, 'accounts' | 'arguments' | 'extraArguments'> & {
+    accounts?: InstructionAccountUpdates;
+    arguments?: InstructionArgumentUpdates;
+}> | {
+    delete: true;
+};
+export type InstructionAccountUpdates = Record<string, Partial<Omit<InstructionAccountNodeInput, 'defaultValue'>> & {
+    defaultValue?: InstructionInputValueNode | null;
+}>;
+export type InstructionArgumentUpdates = Record<string, Partial<Omit<InstructionArgumentNodeInput, 'defaultValue'>> & {
+    defaultValue?: InstructionInputValueNode | null;
+}>;
+export declare function updateInstructionsVisitor(map: Record<string, InstructionUpdates>): import("@codama/visitors-core").Visitor<import("@codama/node-types").Node | null, "accountBumpValueNode" | "accountFieldValueNode" | "accountLinkNode" | "accountNode" | "accountValueNode" | "amountNumberDisplayNode" | "amountTypeNode" | "argumentValueNode" | "arrayTypeNode" | "arrayValueNode" | "booleanTypeNode" | "booleanValueNode" | "bytesTypeNode" | "bytesValueNode" | "conditionalValueNode" | "constantDiscriminatorNode" | "constantNode" | "constantPdaSeedNode" | "constantValueNode" | "dateTimeNumberDisplayNode" | "dateTimeTypeNode" | "definedTypeLinkNode" | "definedTypeNode" | "durationNumberDisplayNode" | "enumEmptyVariantTypeNode" | "enumStructVariantTypeNode" | "enumTupleVariantTypeNode" | "enumTypeNode" | "enumValueNode" | "enumVariantDisplayNode" | "errorNode" | "eventNode" | "fieldDiscriminatorNode" | "fixedCountNode" | "fixedSizeTypeNode" | "hiddenPrefixTypeNode" | "hiddenSuffixTypeNode" | "identityValueNode" | "injectedValueNode" | "instructionAccountDisplayNode" | "instructionAccountLinkNode" | "instructionAccountNode" | "instructionArgumentLinkNode" | "instructionArgumentNode" | "instructionByteDeltaNode" | "instructionDisplayNode" | "instructionLinkNode" | "instructionNode" | "instructionRemainingAccountsNode" | "instructionStatusNode" | "mapEntryValueNode" | "mapTypeNode" | "mapValueNode" | "noneValueNode" | "numberTypeNode" | "numberValueNode" | "optionTypeNode" | "payerValueNode" | "pdaLinkNode" | "pdaNode" | "pdaSeedValueNode" | "pdaValueNode" | "pluginNode" | "postOffsetTypeNode" | "preOffsetTypeNode" | "prefixedCountNode" | "programIdValueNode" | "programLinkNode" | "programNode" | "providedNode" | "publicKeyTypeNode" | "publicKeyValueNode" | "remainderCountNode" | "remainderOptionTypeNode" | "resolverValueNode" | "rootNode" | "sentinelTypeNode" | "setTypeNode" | "setValueNode" | "sizeDiscriminatorNode" | "sizePrefixTypeNode" | "solAmountTypeNode" | "someValueNode" | "stringDisplayNode" | "stringTypeNode" | "stringValueNode" | "structFieldDisplayNode" | "structFieldTypeNode" | "structFieldValueNode" | "structTypeNode" | "structValueNode" | "tupleTypeNode" | "tupleValueNode" | "variablePdaSeedNode" | "zeroableOptionTypeNode">;
+//# sourceMappingURL=updateInstructionsVisitor.d.ts.map

@@ -1,0 +1,1 @@
+{"version":3,"file":"ConstantNode.d.ts","sourceRoot":"","sources":["../../../src/v01/ConstantNode.ts"],"names":[],"mappings":"AAAA,OAAO,EAAiB,YAAY,EAAgC,MAAM,eAAe,CAAC;AAG1F,OAAO,EAAE,WAAW,EAAE,MAAM,OAAO,CAAC;AAEpC,OAAO,EAAE,WAAW,EAAE,MAAM,kBAAkB,CAAC;AAE/C,wBAAgB,yBAAyB,CAAC,GAAG,EAAE,OAAO,CAAC,WAAW,CAAC,EAAE,QAAQ,EAAE,WAAW,GAAG,YAAY,CAaxG"}

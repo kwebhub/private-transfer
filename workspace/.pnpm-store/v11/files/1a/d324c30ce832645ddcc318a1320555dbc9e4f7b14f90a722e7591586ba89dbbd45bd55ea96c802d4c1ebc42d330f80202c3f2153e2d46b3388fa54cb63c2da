@@ -1,0 +1,1 @@
+{"version":3,"file":"StructValueNode.d.ts","sourceRoot":"","sources":["../../../../src/generated/valueNodes/StructValueNode.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,oBAAoB,EAAE,eAAe,EAAE,MAAM,oBAAoB,CAAC;AAEhF,6DAA6D;AAC7D,wBAAgB,eAAe,CAAC,KAAK,CAAC,OAAO,SAAS,KAAK,CAAC,oBAAoB,CAAC,GAAG,SAAS,EACzF,MAAM,EAAE,OAAO,GAChB,eAAe,CAAC,OAAO,CAAC,CAO1B"}

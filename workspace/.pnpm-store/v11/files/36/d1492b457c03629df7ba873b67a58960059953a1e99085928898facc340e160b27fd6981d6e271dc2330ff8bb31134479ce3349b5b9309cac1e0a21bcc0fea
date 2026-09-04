@@ -1,0 +1,1 @@
+{"version":3,"file":"BooleanTypeNode.d.ts","sourceRoot":"","sources":["../../../../src/generated/typeNodes/BooleanTypeNode.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,cAAc,EAAE,cAAc,EAAE,MAAM,oBAAoB,CAAC;AAG1F,kGAAkG;AAClG,wBAAgB,eAAe,CAAC,KAAK,CAAC,KAAK,SAAS,cAAc,CAAC,cAAc,CAAC,GAAG,cAAc,CAAC,IAAI,CAAC,EACrG,IAAI,GAAE,KAA6D,GACpE,eAAe,CAAC,KAAK,CAAC,CAOxB"}

@@ -1,0 +1,15 @@
+import { EventNode } from '@codama/nodes';
+import { NodePath } from '@codama/visitors-core';
+import { Fragment, RenderScope } from '../utils';
+/**
+ * Renders a complete event page: discriminator constants, the event data type,
+ * its codec functions and a parse helper validating the event discriminators.
+ *
+ * @param scope - The render scope with the path to the {@link EventNode} and its byte size.
+ * @returns A {@link Fragment} containing the full event page.
+ */
+export declare function getEventPageFragment(scope: Pick<RenderScope, 'erasableSyntax' | 'nameApi' | 'typeManifestVisitor'> & {
+    eventPath: NodePath<EventNode>;
+    size: number | null;
+}): Fragment;
+//# sourceMappingURL=eventPage.d.ts.map

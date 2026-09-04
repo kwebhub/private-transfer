@@ -1,0 +1,5 @@
+import type { BytesEncoding } from '@codama/node-types';
+export declare function constantPdaSeedNodeFromProgramId(): import("@codama/node-types").ConstantPdaSeedNode<import("@codama/node-types").PublicKeyTypeNode, import("@codama/node-types").ProgramIdValueNode>;
+export declare function constantPdaSeedNodeFromString<TEncoding extends BytesEncoding>(encoding: TEncoding, string: string): import("@codama/node-types").ConstantPdaSeedNode<import("@codama/node-types").StringTypeNode<TEncoding, undefined>, import("@codama/node-types").StringValueNode>;
+export declare function constantPdaSeedNodeFromBytes<TEncoding extends BytesEncoding>(encoding: TEncoding, data: string): import("@codama/node-types").ConstantPdaSeedNode<import("@codama/node-types").BytesTypeNode, import("@codama/node-types").BytesValueNode>;
+//# sourceMappingURL=ConstantPdaSeedNode.d.ts.map

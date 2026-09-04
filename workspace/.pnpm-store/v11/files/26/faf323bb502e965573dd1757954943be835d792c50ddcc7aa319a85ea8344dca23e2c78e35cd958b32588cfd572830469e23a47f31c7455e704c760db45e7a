@@ -1,0 +1,13 @@
+import { ProgramNode } from '@codama/nodes';
+import { Fragment, RenderScope } from '../utils';
+/**
+ * Renders the program-level event helpers: an enum of all program events
+ * and a function identifying which event some given data belongs to.
+ *
+ * @param scope - The render scope with the program node.
+ * @returns A {@link Fragment} with the event helpers, or `undefined` when the program has no events.
+ */
+export declare function getProgramEventsFragment(scope: Pick<RenderScope, 'erasableSyntax' | 'nameApi' | 'typeManifestVisitor'> & {
+    programNode: ProgramNode;
+}): Fragment | undefined;
+//# sourceMappingURL=programEvents.d.ts.map

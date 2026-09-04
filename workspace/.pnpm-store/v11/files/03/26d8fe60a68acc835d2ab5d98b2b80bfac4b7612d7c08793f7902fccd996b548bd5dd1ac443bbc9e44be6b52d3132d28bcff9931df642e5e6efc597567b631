@@ -1,0 +1,1691 @@
+'use strict';
+
+var nodeTypes = require('@codama/node-types');
+var errors = require('@codama/errors');
+
+// src/index.ts
+
+// src/shared/docs.ts
+function parseDocs(docs) {
+  if (docs === null || docs === void 0) return [];
+  return Array.isArray(docs) ? docs : [docs];
+}
+
+// src/shared/stringCases.ts
+function capitalize(str) {
+  if (str.length === 0) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+function titleCase(str) {
+  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(str)) {
+    return str.toLowerCase().split("_").map(capitalize).join(" ");
+  }
+  return str.replace(/([A-Z])/g, " $1").split(/[^a-zA-Z0-9]+/).filter((word) => word.length > 0).map(capitalize).join(" ");
+}
+function pascalCase(str) {
+  return titleCase(str).split(" ").join("");
+}
+function camelCase(str) {
+  if (str.length === 0) return str;
+  const pascalStr = pascalCase(str);
+  return pascalStr.charAt(0).toLowerCase() + pascalStr.slice(1);
+}
+function kebabCase(str) {
+  return titleCase(str).split(" ").join("-").toLowerCase();
+}
+function snakeCase(str) {
+  return titleCase(str).split(" ").join("_").toLowerCase();
+}
+
+// src/generated/typeNodes/StructTypeNode.ts
+function structTypeNode(fields) {
+  return Object.freeze({
+    kind: "structTypeNode",
+    // Children.
+    ...fields !== void 0 && fields.length > 0 && { fields }
+  });
+}
+
+// src/generated/AccountNode.ts
+function accountNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "accountNode",
+    // Data.
+    name: camelCase(input.name),
+    ...input.size !== void 0 && { size: input.size },
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    data: input.data ?? structTypeNode([]),
+    ...input.pda !== void 0 && { pda: input.pda },
+    ...input.discriminators !== void 0 && input.discriminators.length > 0 && { discriminators: input.discriminators }
+  });
+}
+
+// src/generated/codamaVersion.ts
+var CODAMA_VERSION = "1.8.0";
+
+// src/generated/ConstantNode.ts
+function constantNode(name, type, value, docs) {
+  const parsedDocs = parseDocs(docs);
+  return Object.freeze({
+    kind: "constantNode",
+    // Data.
+    name: camelCase(name),
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    type,
+    value
+  });
+}
+
+// src/generated/DefinedTypeNode.ts
+function definedTypeNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "definedTypeNode",
+    // Data.
+    name: camelCase(input.name),
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    type: input.type
+  });
+}
+
+// src/generated/ErrorNode.ts
+function errorNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "errorNode",
+    // Data.
+    name: camelCase(input.name),
+    code: input.code,
+    message: input.message,
+    ...parsedDocs.length > 0 && { docs: parsedDocs }
+  });
+}
+
+// src/generated/EventNode.ts
+function eventNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "eventNode",
+    // Data.
+    name: camelCase(input.name),
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    data: input.data,
+    ...input.discriminators !== void 0 && input.discriminators.length > 0 && { discriminators: input.discriminators }
+  });
+}
+
+// src/generated/InstructionAccountNode.ts
+function instructionAccountNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "instructionAccountNode",
+    // Data.
+    name: camelCase(input.name),
+    isWritable: input.isWritable,
+    isSigner: input.isSigner,
+    isOptional: input.isOptional ?? false,
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    ...input.defaultValue !== void 0 && { defaultValue: input.defaultValue },
+    ...input.accountLink !== void 0 && { accountLink: input.accountLink },
+    ...input.display !== void 0 && { display: input.display }
+  });
+}
+
+// src/generated/InstructionArgumentNode.ts
+function instructionArgumentNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "instructionArgumentNode",
+    // Data.
+    name: camelCase(input.name),
+    ...input.defaultValueStrategy !== void 0 && { defaultValueStrategy: input.defaultValueStrategy },
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    type: input.type,
+    ...input.defaultValue !== void 0 && { defaultValue: input.defaultValue },
+    ...input.display !== void 0 && { display: input.display }
+  });
+}
+function isNode(node, kind) {
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  return !!node && kinds.includes(node.kind);
+}
+function assertIsNode(node, kind) {
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  if (!isNode(node, kinds)) {
+    throw new errors.CodamaError(errors.CODAMA_ERROR__UNEXPECTED_NODE_KIND, {
+      expectedKinds: kinds,
+      kind: node?.kind ?? null,
+      node
+    });
+  }
+}
+function isNodeFilter(kind) {
+  return (node) => isNode(node, kind);
+}
+function assertIsNodeFilter(kind) {
+  return (node) => {
+    assertIsNode(node, kind);
+    return true;
+  };
+}
+function removeNullAndAssertIsNodeFilter(kind) {
+  return (node) => {
+    if (node) assertIsNode(node, kind);
+    return node != null;
+  };
+}
+
+// src/generated/InstructionByteDeltaNode.ts
+function instructionByteDeltaNode(value, options = {}) {
+  return Object.freeze({
+    kind: "instructionByteDeltaNode",
+    // Data.
+    withHeader: options.withHeader ?? !isNode(value, "resolverValueNode"),
+    ...options.subtract !== void 0 && { subtract: options.subtract },
+    // Children.
+    value
+  });
+}
+
+// src/generated/InstructionByteDeltaValue.ts
+var INSTRUCTION_BYTE_DELTA_VALUE_KINDS = [
+  "accountLinkNode",
+  "argumentValueNode",
+  "numberValueNode",
+  "resolverValueNode"
+];
+
+// src/generated/InstructionNode.ts
+function instructionNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "instructionNode",
+    // Data.
+    name: camelCase(input.name),
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    optionalAccountStrategy: input.optionalAccountStrategy ?? "programId",
+    // Children.
+    ...input.accounts !== void 0 && input.accounts.length > 0 && { accounts: input.accounts },
+    ...input.arguments !== void 0 && input.arguments.length > 0 && { arguments: input.arguments },
+    ...input.extraArguments !== void 0 && input.extraArguments.length > 0 && { extraArguments: input.extraArguments },
+    ...input.remainingAccounts !== void 0 && input.remainingAccounts.length > 0 && { remainingAccounts: input.remainingAccounts },
+    ...input.byteDeltas !== void 0 && input.byteDeltas.length > 0 && { byteDeltas: input.byteDeltas },
+    ...input.discriminators !== void 0 && input.discriminators.length > 0 && { discriminators: input.discriminators },
+    ...input.status !== void 0 && { status: input.status },
+    ...input.subInstructions !== void 0 && input.subInstructions.length > 0 && { subInstructions: input.subInstructions },
+    ...input.provides !== void 0 && input.provides.length > 0 && { provides: input.provides },
+    ...input.display !== void 0 && { display: input.display },
+    ...input.plugins !== void 0 && input.plugins.length > 0 && { plugins: input.plugins }
+  });
+}
+
+// src/generated/InstructionRemainingAccountsNode.ts
+function instructionRemainingAccountsNode(value, options = {}) {
+  const parsedDocs = parseDocs(options.docs);
+  return Object.freeze({
+    kind: "instructionRemainingAccountsNode",
+    // Data.
+    ...options.isOptional !== void 0 && { isOptional: options.isOptional },
+    ...options.isSigner !== void 0 && { isSigner: options.isSigner },
+    ...options.isWritable !== void 0 && { isWritable: options.isWritable },
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    value,
+    ...options.display !== void 0 && { display: options.display }
+  });
+}
+
+// src/generated/InstructionRemainingAccountsValue.ts
+var INSTRUCTION_REMAINING_ACCOUNTS_VALUE_KINDS = ["argumentValueNode", "resolverValueNode"];
+
+// src/generated/InstructionStatusNode.ts
+function instructionStatusNode(lifecycle, message) {
+  return Object.freeze({
+    kind: "instructionStatusNode",
+    // Data.
+    lifecycle,
+    ...message !== void 0 && { message }
+  });
+}
+
+// src/generated/contextualValueNodes/StandaloneContextualValueNode.ts
+var STANDALONE_CONTEXTUAL_VALUE_NODE_KINDS = [
+  "accountBumpValueNode",
+  "accountFieldValueNode",
+  "accountValueNode",
+  "argumentValueNode",
+  "conditionalValueNode",
+  "identityValueNode",
+  "payerValueNode",
+  "pdaValueNode",
+  "programIdValueNode",
+  "resolverValueNode"
+];
+
+// src/generated/contextualValueNodes/RegisteredContextualValueNode.ts
+var REGISTERED_CONTEXTUAL_VALUE_NODE_KINDS = [
+  "pdaSeedValueNode",
+  ...STANDALONE_CONTEXTUAL_VALUE_NODE_KINDS
+];
+
+// src/generated/countNodes/RegisteredCountNode.ts
+var REGISTERED_COUNT_NODE_KINDS = [
+  "fixedCountNode",
+  "prefixedCountNode",
+  "remainderCountNode"
+];
+
+// src/generated/discriminatorNodes/RegisteredDiscriminatorNode.ts
+var REGISTERED_DISCRIMINATOR_NODE_KINDS = [
+  "constantDiscriminatorNode",
+  "fieldDiscriminatorNode",
+  "sizeDiscriminatorNode"
+];
+
+// src/generated/displayNodes/RegisteredDisplayNode.ts
+var REGISTERED_DISPLAY_NODE_KINDS = [
+  "amountNumberDisplayNode",
+  "dateTimeNumberDisplayNode",
+  "durationNumberDisplayNode",
+  "enumVariantDisplayNode",
+  "instructionAccountDisplayNode",
+  "instructionDisplayNode",
+  "stringDisplayNode",
+  "structFieldDisplayNode"
+];
+
+// src/generated/linkNodes/RegisteredLinkNode.ts
+var REGISTERED_LINK_NODE_KINDS = [
+  "accountLinkNode",
+  "definedTypeLinkNode",
+  "instructionAccountLinkNode",
+  "instructionArgumentLinkNode",
+  "instructionLinkNode",
+  "pdaLinkNode",
+  "programLinkNode"
+];
+
+// src/generated/pdaSeedNodes/RegisteredPdaSeedNode.ts
+var REGISTERED_PDA_SEED_NODE_KINDS = ["constantPdaSeedNode", "variablePdaSeedNode"];
+
+// src/generated/typeNodes/EnumVariantTypeNode.ts
+var ENUM_VARIANT_TYPE_NODE_KINDS = [
+  "enumEmptyVariantTypeNode",
+  "enumStructVariantTypeNode",
+  "enumTupleVariantTypeNode"
+];
+
+// src/generated/typeNodes/StandaloneTypeNode.ts
+var STANDALONE_TYPE_NODE_KINDS = [
+  "amountTypeNode",
+  "arrayTypeNode",
+  "booleanTypeNode",
+  "bytesTypeNode",
+  "dateTimeTypeNode",
+  "enumTypeNode",
+  "fixedSizeTypeNode",
+  "hiddenPrefixTypeNode",
+  "hiddenSuffixTypeNode",
+  "mapTypeNode",
+  "numberTypeNode",
+  "optionTypeNode",
+  "postOffsetTypeNode",
+  "preOffsetTypeNode",
+  "publicKeyTypeNode",
+  "remainderOptionTypeNode",
+  "sentinelTypeNode",
+  "setTypeNode",
+  "sizePrefixTypeNode",
+  "solAmountTypeNode",
+  "stringTypeNode",
+  "structTypeNode",
+  "tupleTypeNode",
+  "zeroableOptionTypeNode"
+];
+
+// src/generated/typeNodes/RegisteredTypeNode.ts
+var REGISTERED_TYPE_NODE_KINDS = [
+  ...ENUM_VARIANT_TYPE_NODE_KINDS,
+  ...STANDALONE_TYPE_NODE_KINDS,
+  "structFieldTypeNode"
+];
+
+// src/generated/valueNodes/StandaloneValueNode.ts
+var STANDALONE_VALUE_NODE_KINDS = [
+  "arrayValueNode",
+  "booleanValueNode",
+  "bytesValueNode",
+  "constantValueNode",
+  "enumValueNode",
+  "injectedValueNode",
+  "mapValueNode",
+  "noneValueNode",
+  "numberValueNode",
+  "publicKeyValueNode",
+  "setValueNode",
+  "someValueNode",
+  "stringValueNode",
+  "structValueNode",
+  "tupleValueNode"
+];
+
+// src/generated/valueNodes/RegisteredValueNode.ts
+var REGISTERED_VALUE_NODE_KINDS = [
+  "mapEntryValueNode",
+  ...STANDALONE_VALUE_NODE_KINDS,
+  "structFieldValueNode"
+];
+
+// src/generated/nodeKinds.ts
+var REGISTERED_NODE_KINDS = [
+  "accountNode",
+  "constantNode",
+  "definedTypeNode",
+  "errorNode",
+  "eventNode",
+  "instructionAccountNode",
+  "instructionArgumentNode",
+  "instructionByteDeltaNode",
+  "instructionNode",
+  "instructionRemainingAccountsNode",
+  "instructionStatusNode",
+  "pdaNode",
+  "pluginNode",
+  "programNode",
+  "providedNode",
+  "rootNode",
+  ...REGISTERED_CONTEXTUAL_VALUE_NODE_KINDS,
+  ...REGISTERED_COUNT_NODE_KINDS,
+  ...REGISTERED_DISCRIMINATOR_NODE_KINDS,
+  ...REGISTERED_DISPLAY_NODE_KINDS,
+  ...REGISTERED_LINK_NODE_KINDS,
+  ...REGISTERED_PDA_SEED_NODE_KINDS,
+  ...REGISTERED_TYPE_NODE_KINDS,
+  ...REGISTERED_VALUE_NODE_KINDS
+];
+
+// src/generated/PdaNode.ts
+function pdaNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "pdaNode",
+    // Data.
+    name: camelCase(input.name),
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    ...input.programId !== void 0 && { programId: input.programId },
+    // Children.
+    ...input.seeds !== void 0 && input.seeds.length > 0 && { seeds: input.seeds }
+  });
+}
+
+// src/generated/PluginNode.ts
+function pluginNode(name, payload) {
+  return Object.freeze({
+    kind: "pluginNode",
+    // Data.
+    name: camelCase(name),
+    ...payload !== void 0 && { payload }
+  });
+}
+
+// src/generated/ProgramNode.ts
+function programNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "programNode",
+    // Data.
+    name: camelCase(input.name),
+    publicKey: input.publicKey,
+    version: input.version ?? "0.0.0",
+    ...input.origin !== void 0 && { origin: input.origin },
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    ...input.accounts !== void 0 && input.accounts.length > 0 && { accounts: input.accounts },
+    ...input.instructions !== void 0 && input.instructions.length > 0 && { instructions: input.instructions },
+    ...input.definedTypes !== void 0 && input.definedTypes.length > 0 && { definedTypes: input.definedTypes },
+    ...input.pdas !== void 0 && input.pdas.length > 0 && { pdas: input.pdas },
+    ...input.events !== void 0 && input.events.length > 0 && { events: input.events },
+    ...input.errors !== void 0 && input.errors.length > 0 && { errors: input.errors },
+    ...input.constants !== void 0 && input.constants.length > 0 && { constants: input.constants }
+  });
+}
+
+// src/generated/ProvidedNode.ts
+function providedNode(name, value) {
+  return Object.freeze({
+    kind: "providedNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    node: value
+  });
+}
+
+// src/generated/RootNode.ts
+function rootNode(program, additionalPrograms = []) {
+  return Object.freeze({
+    kind: "rootNode",
+    // Data.
+    standard: "codama",
+    version: CODAMA_VERSION,
+    // Children.
+    program,
+    ...additionalPrograms !== void 0 && additionalPrograms.length > 0 && { additionalPrograms }
+  });
+}
+
+// src/generated/contextualValueNodes/AccountBumpValueNode.ts
+function accountBumpValueNode(name) {
+  return Object.freeze({
+    kind: "accountBumpValueNode",
+    // Data.
+    name: camelCase(name)
+  });
+}
+
+// src/generated/contextualValueNodes/AccountFieldValueNode.ts
+function accountFieldValueNode(input) {
+  return Object.freeze({
+    kind: "accountFieldValueNode",
+    // Data.
+    account: camelCase(input.account),
+    ...input.path !== void 0 && { path: camelCase(input.path) }
+  });
+}
+
+// src/generated/contextualValueNodes/AccountValueNode.ts
+function accountValueNode(name) {
+  return Object.freeze({
+    kind: "accountValueNode",
+    // Data.
+    name: camelCase(name)
+  });
+}
+
+// src/generated/contextualValueNodes/ArgumentValueNode.ts
+function argumentValueNode(name) {
+  return Object.freeze({
+    kind: "argumentValueNode",
+    // Data.
+    name: camelCase(name)
+  });
+}
+
+// src/generated/contextualValueNodes/ConditionalValueCondition.ts
+var CONDITIONAL_VALUE_CONDITION_KINDS = [
+  "accountValueNode",
+  "argumentValueNode",
+  "resolverValueNode"
+];
+
+// src/generated/contextualValueNodes/ConditionalValueNode.ts
+function conditionalValueNode(input) {
+  return Object.freeze({
+    kind: "conditionalValueNode",
+    // Children.
+    condition: input.condition,
+    ...input.value !== void 0 && { value: input.value },
+    ...input.ifTrue !== void 0 && { ifTrue: input.ifTrue },
+    ...input.ifFalse !== void 0 && { ifFalse: input.ifFalse }
+  });
+}
+
+// src/generated/contextualValueNodes/ContextualValueNode.ts
+var CONTEXTUAL_VALUE_NODE_KINDS = [...STANDALONE_CONTEXTUAL_VALUE_NODE_KINDS];
+
+// src/generated/contextualValueNodes/IdentityValueNode.ts
+function identityValueNode() {
+  return Object.freeze({
+    kind: "identityValueNode"
+  });
+}
+
+// src/generated/valueNodes/ValueNode.ts
+var VALUE_NODE_KINDS = [...STANDALONE_VALUE_NODE_KINDS];
+
+// src/generated/contextualValueNodes/InstructionInputValueNode.ts
+var INSTRUCTION_INPUT_VALUE_NODE_KINDS = [
+  ...CONTEXTUAL_VALUE_NODE_KINDS,
+  "programLinkNode",
+  ...VALUE_NODE_KINDS
+];
+
+// src/generated/contextualValueNodes/PayerValueNode.ts
+function payerValueNode() {
+  return Object.freeze({
+    kind: "payerValueNode"
+  });
+}
+
+// src/generated/contextualValueNodes/PdaSeedValueNode.ts
+function pdaSeedValueNode(name, value) {
+  return Object.freeze({
+    kind: "pdaSeedValueNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    value
+  });
+}
+
+// src/generated/contextualValueNodes/PdaSeedValueValue.ts
+var PDA_SEED_VALUE_VALUE_KINDS = [
+  "accountValueNode",
+  "argumentValueNode",
+  ...VALUE_NODE_KINDS
+];
+
+// src/generated/linkNodes/ProgramLinkNode.ts
+function programLinkNode(name) {
+  return Object.freeze({
+    kind: "programLinkNode",
+    // Data.
+    name: camelCase(name)
+  });
+}
+
+// src/generated/linkNodes/PdaLinkNode.ts
+function pdaLinkNode(name, program) {
+  return Object.freeze({
+    kind: "pdaLinkNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    ...program !== void 0 && {
+      program: typeof program === "string" ? programLinkNode(program) : program
+    }
+  });
+}
+
+// src/generated/contextualValueNodes/PdaValueNode.ts
+function pdaValueNode(pda, seeds = [], programId) {
+  return Object.freeze({
+    kind: "pdaValueNode",
+    // Children.
+    pda: typeof pda === "string" ? pdaLinkNode(pda) : pda,
+    ...seeds !== void 0 && seeds.length > 0 && { seeds },
+    ...programId !== void 0 && { programId }
+  });
+}
+
+// src/generated/contextualValueNodes/PdaValuePda.ts
+var PDA_VALUE_PDA_KINDS = ["pdaLinkNode", "pdaNode"];
+
+// src/generated/contextualValueNodes/PdaValueProgramId.ts
+var PDA_VALUE_PROGRAM_ID_KINDS = ["accountValueNode", "argumentValueNode"];
+
+// src/generated/contextualValueNodes/ProgramIdValueNode.ts
+function programIdValueNode() {
+  return Object.freeze({
+    kind: "programIdValueNode"
+  });
+}
+
+// src/generated/contextualValueNodes/ResolverDependency.ts
+var RESOLVER_DEPENDENCY_KINDS = ["accountValueNode", "argumentValueNode"];
+
+// src/generated/contextualValueNodes/ResolverValueNode.ts
+function resolverValueNode(name, options = {}) {
+  const parsedDocs = parseDocs(options.docs);
+  return Object.freeze({
+    kind: "resolverValueNode",
+    // Data.
+    name: camelCase(name),
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    ...options.dependsOn !== void 0 && options.dependsOn.length > 0 && { dependsOn: options.dependsOn }
+  });
+}
+
+// src/generated/countNodes/CountNode.ts
+var COUNT_NODE_KINDS = [...REGISTERED_COUNT_NODE_KINDS];
+
+// src/generated/countNodes/FixedCountNode.ts
+function fixedCountNode(value) {
+  return Object.freeze({
+    kind: "fixedCountNode",
+    // Data.
+    value
+  });
+}
+
+// src/generated/countNodes/PrefixedCountNode.ts
+function prefixedCountNode(prefix) {
+  return Object.freeze({
+    kind: "prefixedCountNode",
+    // Children.
+    prefix
+  });
+}
+
+// src/generated/countNodes/RemainderCountNode.ts
+function remainderCountNode() {
+  return Object.freeze({
+    kind: "remainderCountNode"
+  });
+}
+
+// src/generated/discriminatorNodes/ConstantDiscriminatorNode.ts
+function constantDiscriminatorNode(constant, offset = 0) {
+  return Object.freeze({
+    kind: "constantDiscriminatorNode",
+    // Data.
+    offset,
+    // Children.
+    constant
+  });
+}
+
+// src/generated/discriminatorNodes/DiscriminatorNode.ts
+var DISCRIMINATOR_NODE_KINDS = [...REGISTERED_DISCRIMINATOR_NODE_KINDS];
+
+// src/generated/discriminatorNodes/FieldDiscriminatorNode.ts
+function fieldDiscriminatorNode(name, offset = 0) {
+  return Object.freeze({
+    kind: "fieldDiscriminatorNode",
+    // Data.
+    name: camelCase(name),
+    offset
+  });
+}
+
+// src/generated/discriminatorNodes/SizeDiscriminatorNode.ts
+function sizeDiscriminatorNode(size) {
+  return Object.freeze({
+    kind: "sizeDiscriminatorNode",
+    // Data.
+    size
+  });
+}
+
+// src/generated/displayNodes/AmountNumberDisplayNode.ts
+function amountNumberDisplayNode(input) {
+  return Object.freeze({
+    kind: "amountNumberDisplayNode",
+    // Children.
+    ...input.decimals !== void 0 && { decimals: input.decimals },
+    ...input.unit !== void 0 && { unit: input.unit }
+  });
+}
+
+// src/generated/displayNodes/DateTimeNumberDisplayNode.ts
+function dateTimeNumberDisplayNode(input) {
+  return Object.freeze({
+    kind: "dateTimeNumberDisplayNode",
+    // Data.
+    ...input.ticksPerSecond !== void 0 && { ticksPerSecond: input.ticksPerSecond }
+  });
+}
+
+// src/generated/displayNodes/DisplayNode.ts
+var DISPLAY_NODE_KINDS = [...REGISTERED_DISPLAY_NODE_KINDS];
+
+// src/generated/displayNodes/DurationNumberDisplayNode.ts
+function durationNumberDisplayNode(input) {
+  return Object.freeze({
+    kind: "durationNumberDisplayNode",
+    // Data.
+    ...input.ticksPerSecond !== void 0 && { ticksPerSecond: input.ticksPerSecond }
+  });
+}
+
+// src/generated/displayNodes/EnumVariantDisplayNode.ts
+function enumVariantDisplayNode(input) {
+  return Object.freeze({
+    kind: "enumVariantDisplayNode",
+    // Data.
+    ...input.label !== void 0 && { label: input.label },
+    ...input.skipInnerData !== void 0 && { skipInnerData: input.skipInnerData }
+  });
+}
+
+// src/generated/displayNodes/InstructionAccountDisplayNode.ts
+function instructionAccountDisplayNode(input) {
+  return Object.freeze({
+    kind: "instructionAccountDisplayNode",
+    // Data.
+    ...input.label !== void 0 && { label: input.label },
+    ...input.skip !== void 0 && { skip: input.skip }
+  });
+}
+
+// src/generated/displayNodes/InstructionDisplayNode.ts
+function instructionDisplayNode(input) {
+  return Object.freeze({
+    kind: "instructionDisplayNode",
+    // Data.
+    ...input.intent !== void 0 && { intent: input.intent },
+    ...input.interpolatedIntent !== void 0 && { interpolatedIntent: input.interpolatedIntent }
+  });
+}
+
+// src/generated/displayNodes/NumberDisplayNode.ts
+var NUMBER_DISPLAY_NODE_KINDS = [
+  "amountNumberDisplayNode",
+  "dateTimeNumberDisplayNode",
+  "durationNumberDisplayNode"
+];
+
+// src/generated/displayNodes/StringDisplayNode.ts
+function stringDisplayNode(input) {
+  return Object.freeze({
+    kind: "stringDisplayNode",
+    // Data.
+    ...input.sliceStart !== void 0 && { sliceStart: input.sliceStart },
+    ...input.sliceEnd !== void 0 && { sliceEnd: input.sliceEnd }
+  });
+}
+
+// src/generated/displayNodes/StructFieldDisplayNode.ts
+function structFieldDisplayNode(input) {
+  return Object.freeze({
+    kind: "structFieldDisplayNode",
+    // Data.
+    ...input.label !== void 0 && { label: input.label },
+    ...input.skip !== void 0 && { skip: input.skip },
+    ...input.flatten !== void 0 && { flatten: input.flatten },
+    ...input.flattenPrefix !== void 0 && { flattenPrefix: input.flattenPrefix }
+  });
+}
+
+// src/generated/linkNodes/AccountLinkNode.ts
+function accountLinkNode(name, program) {
+  return Object.freeze({
+    kind: "accountLinkNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    ...program !== void 0 && {
+      program: typeof program === "string" ? programLinkNode(program) : program
+    }
+  });
+}
+
+// src/generated/linkNodes/DefinedTypeLinkNode.ts
+function definedTypeLinkNode(name, program) {
+  return Object.freeze({
+    kind: "definedTypeLinkNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    ...program !== void 0 && {
+      program: typeof program === "string" ? programLinkNode(program) : program
+    }
+  });
+}
+
+// src/generated/linkNodes/InstructionLinkNode.ts
+function instructionLinkNode(name, program) {
+  return Object.freeze({
+    kind: "instructionLinkNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    ...program !== void 0 && {
+      program: typeof program === "string" ? programLinkNode(program) : program
+    }
+  });
+}
+
+// src/generated/linkNodes/InstructionAccountLinkNode.ts
+function instructionAccountLinkNode(name, instruction) {
+  return Object.freeze({
+    kind: "instructionAccountLinkNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    ...instruction !== void 0 && {
+      instruction: typeof instruction === "string" ? instructionLinkNode(instruction) : instruction
+    }
+  });
+}
+
+// src/generated/linkNodes/InstructionArgumentLinkNode.ts
+function instructionArgumentLinkNode(name, instruction) {
+  return Object.freeze({
+    kind: "instructionArgumentLinkNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    ...instruction !== void 0 && {
+      instruction: typeof instruction === "string" ? instructionLinkNode(instruction) : instruction
+    }
+  });
+}
+
+// src/generated/linkNodes/LinkNode.ts
+var LINK_NODE_KINDS = [...REGISTERED_LINK_NODE_KINDS];
+
+// src/generated/pdaSeedNodes/ConstantPdaSeedNode.ts
+function constantPdaSeedNode(type, value) {
+  return Object.freeze({
+    kind: "constantPdaSeedNode",
+    // Children.
+    type,
+    value
+  });
+}
+
+// src/generated/pdaSeedNodes/ConstantPdaSeedValue.ts
+var CONSTANT_PDA_SEED_VALUE_KINDS = ["programIdValueNode", ...VALUE_NODE_KINDS];
+
+// src/generated/pdaSeedNodes/PdaSeedNode.ts
+var PDA_SEED_NODE_KINDS = [...REGISTERED_PDA_SEED_NODE_KINDS];
+
+// src/generated/pdaSeedNodes/VariablePdaSeedNode.ts
+function variablePdaSeedNode(name, type, docs) {
+  const parsedDocs = parseDocs(docs);
+  return Object.freeze({
+    kind: "variablePdaSeedNode",
+    // Data.
+    name: camelCase(name),
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    type
+  });
+}
+
+// src/generated/typeNodes/AmountTypeNode.ts
+function amountTypeNode(number, decimals, unit) {
+  return Object.freeze({
+    kind: "amountTypeNode",
+    // Data.
+    decimals,
+    ...unit !== void 0 && { unit },
+    // Children.
+    number
+  });
+}
+
+// src/generated/typeNodes/ArrayTypeNode.ts
+function arrayTypeNode(item, count) {
+  return Object.freeze({
+    kind: "arrayTypeNode",
+    // Children.
+    item,
+    count
+  });
+}
+
+// src/generated/typeNodes/NumberTypeNode.ts
+function numberTypeNode(format, endian = "le", options = {}) {
+  return Object.freeze({
+    kind: "numberTypeNode",
+    // Data.
+    format,
+    endian,
+    // Children.
+    ...options.display !== void 0 && { display: options.display }
+  });
+}
+
+// src/generated/typeNodes/BooleanTypeNode.ts
+function booleanTypeNode(size = numberTypeNode("u8")) {
+  return Object.freeze({
+    kind: "booleanTypeNode",
+    // Children.
+    size
+  });
+}
+
+// src/generated/typeNodes/BytesTypeNode.ts
+function bytesTypeNode() {
+  return Object.freeze({
+    kind: "bytesTypeNode"
+  });
+}
+
+// src/generated/typeNodes/DateTimeTypeNode.ts
+function dateTimeTypeNode(number) {
+  return Object.freeze({
+    kind: "dateTimeTypeNode",
+    // Children.
+    number
+  });
+}
+
+// src/generated/typeNodes/EnumEmptyVariantTypeNode.ts
+function enumEmptyVariantTypeNode(name, discriminator, options = {}) {
+  return Object.freeze({
+    kind: "enumEmptyVariantTypeNode",
+    // Data.
+    name: camelCase(name),
+    ...discriminator !== void 0 && { discriminator },
+    // Children.
+    ...options.display !== void 0 && { display: options.display }
+  });
+}
+
+// src/generated/typeNodes/EnumStructVariantTypeNode.ts
+function enumStructVariantTypeNode(name, struct, discriminator, options = {}) {
+  return Object.freeze({
+    kind: "enumStructVariantTypeNode",
+    // Data.
+    name: camelCase(name),
+    ...discriminator !== void 0 && { discriminator },
+    // Children.
+    struct,
+    ...options.display !== void 0 && { display: options.display }
+  });
+}
+
+// src/generated/typeNodes/EnumTupleVariantTypeNode.ts
+function enumTupleVariantTypeNode(name, tuple, discriminator, options = {}) {
+  return Object.freeze({
+    kind: "enumTupleVariantTypeNode",
+    // Data.
+    name: camelCase(name),
+    ...discriminator !== void 0 && { discriminator },
+    // Children.
+    tuple,
+    ...options.display !== void 0 && { display: options.display }
+  });
+}
+
+// src/generated/typeNodes/EnumTypeNode.ts
+function enumTypeNode(variants, options = {}) {
+  return Object.freeze({
+    kind: "enumTypeNode",
+    // Children.
+    ...variants !== void 0 && variants.length > 0 && { variants },
+    size: options.size ?? numberTypeNode("u8")
+  });
+}
+
+// src/generated/typeNodes/FixedSizeTypeNode.ts
+function fixedSizeTypeNode(type, size) {
+  return Object.freeze({
+    kind: "fixedSizeTypeNode",
+    // Data.
+    size,
+    // Children.
+    type
+  });
+}
+
+// src/generated/typeNodes/HiddenPrefixTypeNode.ts
+function hiddenPrefixTypeNode(type, prefix) {
+  return Object.freeze({
+    kind: "hiddenPrefixTypeNode",
+    // Children.
+    type,
+    ...prefix !== void 0 && prefix.length > 0 && { prefix }
+  });
+}
+
+// src/generated/typeNodes/HiddenSuffixTypeNode.ts
+function hiddenSuffixTypeNode(type, suffix) {
+  return Object.freeze({
+    kind: "hiddenSuffixTypeNode",
+    // Children.
+    type,
+    ...suffix !== void 0 && suffix.length > 0 && { suffix }
+  });
+}
+
+// src/generated/typeNodes/MapTypeNode.ts
+function mapTypeNode(key, value, count) {
+  return Object.freeze({
+    kind: "mapTypeNode",
+    // Children.
+    key,
+    value,
+    count
+  });
+}
+
+// src/generated/typeNodes/OptionTypeNode.ts
+function optionTypeNode(item, options = {}) {
+  return Object.freeze({
+    kind: "optionTypeNode",
+    // Data.
+    fixed: options.fixed ?? false,
+    // Children.
+    item,
+    prefix: options.prefix ?? numberTypeNode("u8")
+  });
+}
+
+// src/generated/typeNodes/PostOffsetTypeNode.ts
+function postOffsetTypeNode(type, offset, strategy = "relative") {
+  return Object.freeze({
+    kind: "postOffsetTypeNode",
+    // Data.
+    offset,
+    strategy,
+    // Children.
+    type
+  });
+}
+
+// src/generated/typeNodes/PreOffsetTypeNode.ts
+function preOffsetTypeNode(type, offset, strategy = "relative") {
+  return Object.freeze({
+    kind: "preOffsetTypeNode",
+    // Data.
+    offset,
+    strategy,
+    // Children.
+    type
+  });
+}
+
+// src/generated/typeNodes/PublicKeyTypeNode.ts
+function publicKeyTypeNode() {
+  return Object.freeze({
+    kind: "publicKeyTypeNode"
+  });
+}
+
+// src/generated/typeNodes/RemainderOptionTypeNode.ts
+function remainderOptionTypeNode(item) {
+  return Object.freeze({
+    kind: "remainderOptionTypeNode",
+    // Children.
+    item
+  });
+}
+
+// src/generated/typeNodes/SentinelTypeNode.ts
+function sentinelTypeNode(type, sentinel) {
+  return Object.freeze({
+    kind: "sentinelTypeNode",
+    // Children.
+    type,
+    sentinel
+  });
+}
+
+// src/generated/typeNodes/SetTypeNode.ts
+function setTypeNode(item, count) {
+  return Object.freeze({
+    kind: "setTypeNode",
+    // Children.
+    item,
+    count
+  });
+}
+
+// src/generated/typeNodes/SizePrefixTypeNode.ts
+function sizePrefixTypeNode(type, prefix) {
+  return Object.freeze({
+    kind: "sizePrefixTypeNode",
+    // Children.
+    type,
+    prefix
+  });
+}
+
+// src/generated/typeNodes/SolAmountTypeNode.ts
+function solAmountTypeNode(number) {
+  return Object.freeze({
+    kind: "solAmountTypeNode",
+    // Children.
+    number
+  });
+}
+
+// src/generated/typeNodes/StringTypeNode.ts
+function stringTypeNode(encoding, options = {}) {
+  return Object.freeze({
+    kind: "stringTypeNode",
+    // Data.
+    encoding,
+    // Children.
+    ...options.display !== void 0 && { display: options.display }
+  });
+}
+
+// src/generated/typeNodes/StructFieldTypeNode.ts
+function structFieldTypeNode(input) {
+  const parsedDocs = parseDocs(input.docs);
+  return Object.freeze({
+    kind: "structFieldTypeNode",
+    // Data.
+    name: camelCase(input.name),
+    ...input.defaultValueStrategy !== void 0 && { defaultValueStrategy: input.defaultValueStrategy },
+    ...parsedDocs.length > 0 && { docs: parsedDocs },
+    // Children.
+    type: input.type,
+    ...input.defaultValue !== void 0 && { defaultValue: input.defaultValue },
+    ...input.display !== void 0 && { display: input.display }
+  });
+}
+
+// src/generated/typeNodes/TupleTypeNode.ts
+function tupleTypeNode(items) {
+  return Object.freeze({
+    kind: "tupleTypeNode",
+    // Children.
+    ...items !== void 0 && items.length > 0 && { items }
+  });
+}
+
+// src/generated/typeNodes/TypeNode.ts
+var TYPE_NODE_KINDS = ["definedTypeLinkNode", ...STANDALONE_TYPE_NODE_KINDS];
+
+// src/generated/typeNodes/ZeroableOptionTypeNode.ts
+function zeroableOptionTypeNode(item, zeroValue) {
+  return Object.freeze({
+    kind: "zeroableOptionTypeNode",
+    // Children.
+    item,
+    ...zeroValue !== void 0 && { zeroValue }
+  });
+}
+
+// src/generated/valueNodes/ArrayValueNode.ts
+function arrayValueNode(items) {
+  return Object.freeze({
+    kind: "arrayValueNode",
+    // Children.
+    ...items !== void 0 && items.length > 0 && { items }
+  });
+}
+
+// src/generated/valueNodes/BooleanValueNode.ts
+function booleanValueNode(boolean) {
+  return Object.freeze({
+    kind: "booleanValueNode",
+    // Data.
+    boolean
+  });
+}
+
+// src/generated/valueNodes/BytesValueNode.ts
+function bytesValueNode(encoding, data) {
+  return Object.freeze({
+    kind: "bytesValueNode",
+    // Data.
+    data,
+    encoding
+  });
+}
+
+// src/generated/valueNodes/ConstantValueNode.ts
+function constantValueNode(type, value) {
+  return Object.freeze({
+    kind: "constantValueNode",
+    // Children.
+    type,
+    value
+  });
+}
+
+// src/generated/valueNodes/EnumValueNode.ts
+function enumValueNode(enumLink, variant, value) {
+  return Object.freeze({
+    kind: "enumValueNode",
+    // Data.
+    variant: camelCase(variant),
+    // Children.
+    enum: typeof enumLink === "string" ? definedTypeLinkNode(enumLink) : enumLink,
+    ...value !== void 0 && { value }
+  });
+}
+
+// src/generated/valueNodes/EnumValuePayload.ts
+var ENUM_VALUE_PAYLOAD_KINDS = ["structValueNode", "tupleValueNode"];
+
+// src/generated/valueNodes/InjectableNumberValueNode.ts
+var INJECTABLE_NUMBER_VALUE_NODE_KINDS = ["injectedValueNode", "numberValueNode"];
+
+// src/generated/valueNodes/InjectableStringValueNode.ts
+var INJECTABLE_STRING_VALUE_NODE_KINDS = ["injectedValueNode", "stringValueNode"];
+
+// src/generated/valueNodes/InjectedValueNode.ts
+function injectedValueNode(input) {
+  return Object.freeze({
+    kind: "injectedValueNode",
+    // Data.
+    key: camelCase(input.key),
+    // Children.
+    ...input.fallback !== void 0 && { fallback: input.fallback }
+  });
+}
+
+// src/generated/valueNodes/MapEntryValueNode.ts
+function mapEntryValueNode(key, value) {
+  return Object.freeze({
+    kind: "mapEntryValueNode",
+    // Children.
+    key,
+    value
+  });
+}
+
+// src/generated/valueNodes/MapValueNode.ts
+function mapValueNode(entries) {
+  return Object.freeze({
+    kind: "mapValueNode",
+    // Children.
+    ...entries !== void 0 && entries.length > 0 && { entries }
+  });
+}
+
+// src/generated/valueNodes/NoneValueNode.ts
+function noneValueNode() {
+  return Object.freeze({
+    kind: "noneValueNode"
+  });
+}
+
+// src/generated/valueNodes/NumberValueNode.ts
+function numberValueNode(number) {
+  return Object.freeze({
+    kind: "numberValueNode",
+    // Data.
+    number
+  });
+}
+
+// src/generated/valueNodes/PublicKeyValueNode.ts
+function publicKeyValueNode(publicKey, identifier) {
+  return Object.freeze({
+    kind: "publicKeyValueNode",
+    // Data.
+    publicKey,
+    ...identifier !== void 0 && { identifier: camelCase(identifier) }
+  });
+}
+
+// src/generated/valueNodes/SetValueNode.ts
+function setValueNode(items) {
+  return Object.freeze({
+    kind: "setValueNode",
+    // Children.
+    ...items !== void 0 && items.length > 0 && { items }
+  });
+}
+
+// src/generated/valueNodes/SomeValueNode.ts
+function someValueNode(value) {
+  return Object.freeze({
+    kind: "someValueNode",
+    // Children.
+    value
+  });
+}
+
+// src/generated/valueNodes/StringValueNode.ts
+function stringValueNode(string) {
+  return Object.freeze({
+    kind: "stringValueNode",
+    // Data.
+    string
+  });
+}
+
+// src/generated/valueNodes/StructFieldValueNode.ts
+function structFieldValueNode(name, value) {
+  return Object.freeze({
+    kind: "structFieldValueNode",
+    // Data.
+    name: camelCase(name),
+    // Children.
+    value
+  });
+}
+
+// src/generated/valueNodes/StructValueNode.ts
+function structValueNode(fields) {
+  return Object.freeze({
+    kind: "structValueNode",
+    // Children.
+    ...fields !== void 0 && fields.length > 0 && { fields }
+  });
+}
+
+// src/generated/valueNodes/TupleValueNode.ts
+function tupleValueNode(items) {
+  return Object.freeze({
+    kind: "tupleValueNode",
+    // Children.
+    ...items !== void 0 && items.length > 0 && { items }
+  });
+}
+
+// src/ConstantPdaSeedNode.ts
+function constantPdaSeedNodeFromProgramId() {
+  return constantPdaSeedNode(publicKeyTypeNode(), programIdValueNode());
+}
+function constantPdaSeedNodeFromString(encoding, string) {
+  return constantPdaSeedNode(stringTypeNode(encoding), stringValueNode(string));
+}
+function constantPdaSeedNodeFromBytes(encoding, data) {
+  return constantPdaSeedNode(bytesTypeNode(), bytesValueNode(encoding, data));
+}
+
+// src/ConstantValueNode.ts
+function constantValueNodeFromString(encoding, string) {
+  return constantValueNode(stringTypeNode(encoding), stringValueNode(string));
+}
+function constantValueNodeFromBytes(encoding, data) {
+  return constantValueNode(bytesTypeNode(), bytesValueNode(encoding, data));
+}
+
+// src/EnumTypeNode.ts
+function isScalarEnum(node) {
+  return (node.variants ?? []).every((variant) => variant.kind === "enumEmptyVariantTypeNode");
+}
+function isDataEnum(node) {
+  return !isScalarEnum(node);
+}
+
+// src/InstructionArgumentNode.ts
+function structTypeNodeFromInstructionArgumentNodes(nodes) {
+  return structTypeNode(nodes.map(structFieldTypeNodeFromInstructionArgumentNode));
+}
+function structFieldTypeNodeFromInstructionArgumentNode(node) {
+  if (isNode(node.defaultValue, VALUE_NODE_KINDS)) {
+    return structFieldTypeNode({ ...node, defaultValue: node.defaultValue });
+  }
+  return structFieldTypeNode({
+    ...node,
+    defaultValue: void 0,
+    defaultValueStrategy: void 0
+  });
+}
+
+// src/ProgramNode.ts
+function getAllPrograms(node) {
+  if (Array.isArray(node)) return node;
+  if (node.kind === "programNode") return [node];
+  return [node.program, ...node.additionalPrograms ?? []];
+}
+function getAllPdas(node) {
+  return getAllPrograms(node).flatMap((program) => program.pdas ?? []);
+}
+function getAllAccounts(node) {
+  return getAllPrograms(node).flatMap((program) => program.accounts ?? []);
+}
+function getAllEvents(node) {
+  return getAllPrograms(node).flatMap((program) => program.events ?? []);
+}
+function getAllDefinedTypes(node) {
+  return getAllPrograms(node).flatMap((program) => program.definedTypes ?? []);
+}
+function getAllInstructions(node) {
+  return getAllPrograms(node).flatMap((program) => program.instructions ?? []);
+}
+function getAllErrors(node) {
+  return getAllPrograms(node).flatMap((program) => program.errors ?? []);
+}
+function getAllConstants(node) {
+  return getAllPrograms(node).flatMap((program) => program.constants ?? []);
+}
+
+// src/InstructionNode.ts
+function parseOptionalAccountStrategy(optionalAccountStrategy) {
+  return optionalAccountStrategy ?? "programId";
+}
+function getAllInstructionArguments(node) {
+  return [...node.arguments ?? [], ...node.extraArguments ?? []];
+}
+function getAllInstructionsWithSubs(node, config = {}) {
+  const { leavesOnly = false, subInstructionsFirst = false } = config;
+  if (isNode(node, "instructionNode")) {
+    if (!node.subInstructions || node.subInstructions.length === 0) return [node];
+    const subInstructions = node.subInstructions.flatMap((sub) => getAllInstructionsWithSubs(sub, config));
+    if (leavesOnly) return subInstructions;
+    return subInstructionsFirst ? [...subInstructions, node] : [node, ...subInstructions];
+  }
+  const instructions = isNode(node, "programNode") ? node.instructions ?? [] : getAllInstructions(node);
+  return instructions.flatMap((instruction) => getAllInstructionsWithSubs(instruction, config));
+}
+function resolveNestedTypeNode(typeNode) {
+  switch (typeNode.kind) {
+    case "fixedSizeTypeNode":
+    case "hiddenPrefixTypeNode":
+    case "hiddenSuffixTypeNode":
+    case "postOffsetTypeNode":
+    case "preOffsetTypeNode":
+    case "sentinelTypeNode":
+    case "sizePrefixTypeNode":
+      return resolveNestedTypeNode(typeNode.type);
+    default:
+      return typeNode;
+  }
+}
+function transformNestedTypeNode(typeNode, map) {
+  switch (typeNode.kind) {
+    case "fixedSizeTypeNode":
+    case "hiddenPrefixTypeNode":
+    case "hiddenSuffixTypeNode":
+    case "postOffsetTypeNode":
+    case "preOffsetTypeNode":
+    case "sentinelTypeNode":
+    case "sizePrefixTypeNode":
+      return Object.freeze({
+        ...typeNode,
+        type: transformNestedTypeNode(typeNode.type, map)
+      });
+    default:
+      return map(typeNode);
+  }
+}
+function isNestedTypeNode(node, kind) {
+  if (!isNode(node, TYPE_NODE_KINDS)) return false;
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  const resolved = resolveNestedTypeNode(node);
+  return !!node && kinds.includes(resolved.kind);
+}
+function assertIsNestedTypeNode(node, kind) {
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  if (!isNestedTypeNode(node, kinds)) {
+    throw new errors.CodamaError(errors.CODAMA_ERROR__UNEXPECTED_NESTED_NODE_KIND, {
+      expectedKinds: kinds,
+      kind: node?.kind ?? null,
+      node
+    });
+  }
+}
+
+// src/NumberTypeNode.ts
+function isSignedInteger(node) {
+  return node.format.startsWith("i");
+}
+function isUnsignedInteger(node) {
+  return node.format.startsWith("u") || node.format === "shortU16";
+}
+function isInteger(node) {
+  return !node.format.startsWith("f");
+}
+function isDecimal(node) {
+  return node.format.startsWith("f");
+}
+
+exports.CODAMA_VERSION = CODAMA_VERSION;
+exports.CONDITIONAL_VALUE_CONDITION_KINDS = CONDITIONAL_VALUE_CONDITION_KINDS;
+exports.CONSTANT_PDA_SEED_VALUE_KINDS = CONSTANT_PDA_SEED_VALUE_KINDS;
+exports.CONTEXTUAL_VALUE_NODES = CONTEXTUAL_VALUE_NODE_KINDS;
+exports.CONTEXTUAL_VALUE_NODE_KINDS = CONTEXTUAL_VALUE_NODE_KINDS;
+exports.COUNT_NODES = REGISTERED_COUNT_NODE_KINDS;
+exports.COUNT_NODE_KINDS = COUNT_NODE_KINDS;
+exports.DISCRIMINATOR_NODES = REGISTERED_DISCRIMINATOR_NODE_KINDS;
+exports.DISCRIMINATOR_NODE_KINDS = DISCRIMINATOR_NODE_KINDS;
+exports.DISPLAY_NODE_KINDS = DISPLAY_NODE_KINDS;
+exports.ENUM_VALUE_PAYLOAD_KINDS = ENUM_VALUE_PAYLOAD_KINDS;
+exports.ENUM_VARIANT_TYPE_NODES = ENUM_VARIANT_TYPE_NODE_KINDS;
+exports.ENUM_VARIANT_TYPE_NODE_KINDS = ENUM_VARIANT_TYPE_NODE_KINDS;
+exports.INJECTABLE_NUMBER_VALUE_NODE_KINDS = INJECTABLE_NUMBER_VALUE_NODE_KINDS;
+exports.INJECTABLE_STRING_VALUE_NODE_KINDS = INJECTABLE_STRING_VALUE_NODE_KINDS;
+exports.INSTRUCTION_BYTE_DELTA_VALUE_KINDS = INSTRUCTION_BYTE_DELTA_VALUE_KINDS;
+exports.INSTRUCTION_INPUT_VALUE_NODES = INSTRUCTION_INPUT_VALUE_NODE_KINDS;
+exports.INSTRUCTION_INPUT_VALUE_NODE_KINDS = INSTRUCTION_INPUT_VALUE_NODE_KINDS;
+exports.INSTRUCTION_REMAINING_ACCOUNTS_VALUE_KINDS = INSTRUCTION_REMAINING_ACCOUNTS_VALUE_KINDS;
+exports.LINK_NODES = REGISTERED_LINK_NODE_KINDS;
+exports.LINK_NODE_KINDS = LINK_NODE_KINDS;
+exports.NUMBER_DISPLAY_NODE_KINDS = NUMBER_DISPLAY_NODE_KINDS;
+exports.PDA_SEED_NODES = REGISTERED_PDA_SEED_NODE_KINDS;
+exports.PDA_SEED_NODE_KINDS = PDA_SEED_NODE_KINDS;
+exports.PDA_SEED_VALUE_VALUE_KINDS = PDA_SEED_VALUE_VALUE_KINDS;
+exports.PDA_VALUE_PDA_KINDS = PDA_VALUE_PDA_KINDS;
+exports.PDA_VALUE_PROGRAM_ID_KINDS = PDA_VALUE_PROGRAM_ID_KINDS;
+exports.REGISTERED_CONTEXTUAL_VALUE_NODE_KINDS = REGISTERED_CONTEXTUAL_VALUE_NODE_KINDS;
+exports.REGISTERED_COUNT_NODE_KINDS = REGISTERED_COUNT_NODE_KINDS;
+exports.REGISTERED_DISCRIMINATOR_NODE_KINDS = REGISTERED_DISCRIMINATOR_NODE_KINDS;
+exports.REGISTERED_DISPLAY_NODE_KINDS = REGISTERED_DISPLAY_NODE_KINDS;
+exports.REGISTERED_LINK_NODE_KINDS = REGISTERED_LINK_NODE_KINDS;
+exports.REGISTERED_NODE_KINDS = REGISTERED_NODE_KINDS;
+exports.REGISTERED_PDA_SEED_NODE_KINDS = REGISTERED_PDA_SEED_NODE_KINDS;
+exports.REGISTERED_TYPE_NODE_KINDS = REGISTERED_TYPE_NODE_KINDS;
+exports.REGISTERED_VALUE_NODE_KINDS = REGISTERED_VALUE_NODE_KINDS;
+exports.RESOLVER_DEPENDENCY_KINDS = RESOLVER_DEPENDENCY_KINDS;
+exports.STANDALONE_CONTEXTUAL_VALUE_NODE_KINDS = STANDALONE_CONTEXTUAL_VALUE_NODE_KINDS;
+exports.STANDALONE_TYPE_NODE_KINDS = STANDALONE_TYPE_NODE_KINDS;
+exports.STANDALONE_VALUE_NODE_KINDS = STANDALONE_VALUE_NODE_KINDS;
+exports.TYPE_NODES = TYPE_NODE_KINDS;
+exports.TYPE_NODE_KINDS = TYPE_NODE_KINDS;
+exports.VALUE_NODES = VALUE_NODE_KINDS;
+exports.VALUE_NODE_KINDS = VALUE_NODE_KINDS;
+exports.accountBumpValueNode = accountBumpValueNode;
+exports.accountFieldValueNode = accountFieldValueNode;
+exports.accountLinkNode = accountLinkNode;
+exports.accountNode = accountNode;
+exports.accountValueNode = accountValueNode;
+exports.amountNumberDisplayNode = amountNumberDisplayNode;
+exports.amountTypeNode = amountTypeNode;
+exports.argumentValueNode = argumentValueNode;
+exports.arrayTypeNode = arrayTypeNode;
+exports.arrayValueNode = arrayValueNode;
+exports.assertIsNestedTypeNode = assertIsNestedTypeNode;
+exports.assertIsNode = assertIsNode;
+exports.assertIsNodeFilter = assertIsNodeFilter;
+exports.booleanTypeNode = booleanTypeNode;
+exports.booleanValueNode = booleanValueNode;
+exports.bytesTypeNode = bytesTypeNode;
+exports.bytesValueNode = bytesValueNode;
+exports.camelCase = camelCase;
+exports.capitalize = capitalize;
+exports.conditionalValueNode = conditionalValueNode;
+exports.constantDiscriminatorNode = constantDiscriminatorNode;
+exports.constantNode = constantNode;
+exports.constantPdaSeedNode = constantPdaSeedNode;
+exports.constantPdaSeedNodeFromBytes = constantPdaSeedNodeFromBytes;
+exports.constantPdaSeedNodeFromProgramId = constantPdaSeedNodeFromProgramId;
+exports.constantPdaSeedNodeFromString = constantPdaSeedNodeFromString;
+exports.constantValueNode = constantValueNode;
+exports.constantValueNodeFromBytes = constantValueNodeFromBytes;
+exports.constantValueNodeFromString = constantValueNodeFromString;
+exports.dateTimeNumberDisplayNode = dateTimeNumberDisplayNode;
+exports.dateTimeTypeNode = dateTimeTypeNode;
+exports.definedTypeLinkNode = definedTypeLinkNode;
+exports.definedTypeNode = definedTypeNode;
+exports.durationNumberDisplayNode = durationNumberDisplayNode;
+exports.enumEmptyVariantTypeNode = enumEmptyVariantTypeNode;
+exports.enumStructVariantTypeNode = enumStructVariantTypeNode;
+exports.enumTupleVariantTypeNode = enumTupleVariantTypeNode;
+exports.enumTypeNode = enumTypeNode;
+exports.enumValueNode = enumValueNode;
+exports.enumVariantDisplayNode = enumVariantDisplayNode;
+exports.errorNode = errorNode;
+exports.eventNode = eventNode;
+exports.fieldDiscriminatorNode = fieldDiscriminatorNode;
+exports.fixedCountNode = fixedCountNode;
+exports.fixedSizeTypeNode = fixedSizeTypeNode;
+exports.getAllAccounts = getAllAccounts;
+exports.getAllConstants = getAllConstants;
+exports.getAllDefinedTypes = getAllDefinedTypes;
+exports.getAllErrors = getAllErrors;
+exports.getAllEvents = getAllEvents;
+exports.getAllInstructionArguments = getAllInstructionArguments;
+exports.getAllInstructions = getAllInstructions;
+exports.getAllInstructionsWithSubs = getAllInstructionsWithSubs;
+exports.getAllPdas = getAllPdas;
+exports.getAllPrograms = getAllPrograms;
+exports.hiddenPrefixTypeNode = hiddenPrefixTypeNode;
+exports.hiddenSuffixTypeNode = hiddenSuffixTypeNode;
+exports.identityValueNode = identityValueNode;
+exports.injectedValueNode = injectedValueNode;
+exports.instructionAccountDisplayNode = instructionAccountDisplayNode;
+exports.instructionAccountLinkNode = instructionAccountLinkNode;
+exports.instructionAccountNode = instructionAccountNode;
+exports.instructionArgumentLinkNode = instructionArgumentLinkNode;
+exports.instructionArgumentNode = instructionArgumentNode;
+exports.instructionByteDeltaNode = instructionByteDeltaNode;
+exports.instructionDisplayNode = instructionDisplayNode;
+exports.instructionLinkNode = instructionLinkNode;
+exports.instructionNode = instructionNode;
+exports.instructionRemainingAccountsNode = instructionRemainingAccountsNode;
+exports.instructionStatusNode = instructionStatusNode;
+exports.isDataEnum = isDataEnum;
+exports.isDecimal = isDecimal;
+exports.isInteger = isInteger;
+exports.isNestedTypeNode = isNestedTypeNode;
+exports.isNode = isNode;
+exports.isNodeFilter = isNodeFilter;
+exports.isScalarEnum = isScalarEnum;
+exports.isSignedInteger = isSignedInteger;
+exports.isUnsignedInteger = isUnsignedInteger;
+exports.kebabCase = kebabCase;
+exports.mapEntryValueNode = mapEntryValueNode;
+exports.mapTypeNode = mapTypeNode;
+exports.mapValueNode = mapValueNode;
+exports.noneValueNode = noneValueNode;
+exports.numberTypeNode = numberTypeNode;
+exports.numberValueNode = numberValueNode;
+exports.optionTypeNode = optionTypeNode;
+exports.parseDocs = parseDocs;
+exports.parseOptionalAccountStrategy = parseOptionalAccountStrategy;
+exports.pascalCase = pascalCase;
+exports.payerValueNode = payerValueNode;
+exports.pdaLinkNode = pdaLinkNode;
+exports.pdaNode = pdaNode;
+exports.pdaSeedValueNode = pdaSeedValueNode;
+exports.pdaValueNode = pdaValueNode;
+exports.pluginNode = pluginNode;
+exports.postOffsetTypeNode = postOffsetTypeNode;
+exports.preOffsetTypeNode = preOffsetTypeNode;
+exports.prefixedCountNode = prefixedCountNode;
+exports.programIdValueNode = programIdValueNode;
+exports.programLinkNode = programLinkNode;
+exports.programNode = programNode;
+exports.providedNode = providedNode;
+exports.publicKeyTypeNode = publicKeyTypeNode;
+exports.publicKeyValueNode = publicKeyValueNode;
+exports.remainderCountNode = remainderCountNode;
+exports.remainderOptionTypeNode = remainderOptionTypeNode;
+exports.removeNullAndAssertIsNodeFilter = removeNullAndAssertIsNodeFilter;
+exports.resolveNestedTypeNode = resolveNestedTypeNode;
+exports.resolverValueNode = resolverValueNode;
+exports.rootNode = rootNode;
+exports.sentinelTypeNode = sentinelTypeNode;
+exports.setTypeNode = setTypeNode;
+exports.setValueNode = setValueNode;
+exports.sizeDiscriminatorNode = sizeDiscriminatorNode;
+exports.sizePrefixTypeNode = sizePrefixTypeNode;
+exports.snakeCase = snakeCase;
+exports.solAmountTypeNode = solAmountTypeNode;
+exports.someValueNode = someValueNode;
+exports.stringDisplayNode = stringDisplayNode;
+exports.stringTypeNode = stringTypeNode;
+exports.stringValueNode = stringValueNode;
+exports.structFieldDisplayNode = structFieldDisplayNode;
+exports.structFieldTypeNode = structFieldTypeNode;
+exports.structFieldTypeNodeFromInstructionArgumentNode = structFieldTypeNodeFromInstructionArgumentNode;
+exports.structFieldValueNode = structFieldValueNode;
+exports.structTypeNode = structTypeNode;
+exports.structTypeNodeFromInstructionArgumentNodes = structTypeNodeFromInstructionArgumentNodes;
+exports.structValueNode = structValueNode;
+exports.titleCase = titleCase;
+exports.transformNestedTypeNode = transformNestedTypeNode;
+exports.tupleTypeNode = tupleTypeNode;
+exports.tupleValueNode = tupleValueNode;
+exports.variablePdaSeedNode = variablePdaSeedNode;
+exports.zeroableOptionTypeNode = zeroableOptionTypeNode;
+Object.keys(nodeTypes).forEach(function (k) {
+  if (k !== 'default' && !Object.prototype.hasOwnProperty.call(exports, k)) Object.defineProperty(exports, k, {
+    enumerable: true,
+    get: function () { return nodeTypes[k]; }
+  });
+});
+//# sourceMappingURL=index.node.cjs.map
+//# sourceMappingURL=index.node.cjs.map

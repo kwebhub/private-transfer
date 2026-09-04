@@ -1,0 +1,3 @@
+/** The composable form: any standalone value node. */
+export declare const VALUE_NODE_KINDS: ("arrayValueNode" | "booleanValueNode" | "bytesValueNode" | "constantValueNode" | "enumValueNode" | "injectedValueNode" | "mapValueNode" | "noneValueNode" | "numberValueNode" | "publicKeyValueNode" | "setValueNode" | "someValueNode" | "stringValueNode" | "structValueNode" | "tupleValueNode")[];
+//# sourceMappingURL=ValueNode.d.ts.map

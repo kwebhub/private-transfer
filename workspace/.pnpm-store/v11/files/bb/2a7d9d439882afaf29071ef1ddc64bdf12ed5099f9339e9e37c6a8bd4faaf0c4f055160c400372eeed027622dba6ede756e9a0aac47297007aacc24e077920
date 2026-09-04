@@ -1,0 +1,3 @@
+/** A `pdaValueNode` may reference a PDA either by link or inline. */
+export declare const PDA_VALUE_PDA_KINDS: ("pdaLinkNode" | "pdaNode")[];
+//# sourceMappingURL=PdaValuePda.d.ts.map

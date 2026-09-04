@@ -1,0 +1,4 @@
+import type { BytesEncoding } from '@codama/node-types';
+export declare function constantValueNodeFromString<TEncoding extends BytesEncoding>(encoding: TEncoding, string: string): import("@codama/node-types").ConstantValueNode<import("@codama/node-types").StringTypeNode<TEncoding, undefined>, import("@codama/node-types").StringValueNode>;
+export declare function constantValueNodeFromBytes<TEncoding extends BytesEncoding>(encoding: TEncoding, data: string): import("@codama/node-types").ConstantValueNode<import("@codama/node-types").BytesTypeNode, import("@codama/node-types").BytesValueNode>;
+//# sourceMappingURL=ConstantValueNode.d.ts.map

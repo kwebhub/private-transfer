@@ -1,0 +1,3 @@
+/** Every contextual-value node usable as a top-level value. */
+export declare const STANDALONE_CONTEXTUAL_VALUE_NODE_KINDS: ("accountBumpValueNode" | "accountFieldValueNode" | "accountValueNode" | "argumentValueNode" | "conditionalValueNode" | "identityValueNode" | "payerValueNode" | "pdaValueNode" | "programIdValueNode" | "resolverValueNode")[];
+//# sourceMappingURL=StandaloneContextualValueNode.d.ts.map

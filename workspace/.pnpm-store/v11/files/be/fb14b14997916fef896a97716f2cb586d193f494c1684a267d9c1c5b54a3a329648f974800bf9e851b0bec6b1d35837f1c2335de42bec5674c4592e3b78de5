@@ -1,0 +1,1 @@
+{"version":3,"file":"PluginNode.d.ts","sourceRoot":"","sources":["../../../src/generated/PluginNode.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,WAAW,CAAC;AAEjD;;;GAGG;AACH,MAAM,WAAW,UAAU;IACvB,QAAQ,CAAC,IAAI,EAAE,YAAY,CAAC;IAG5B,mEAAmE;IACnE,QAAQ,CAAC,IAAI,EAAE,eAAe,CAAC;IAC/B,qIAAqI;IACrI,QAAQ,CAAC,OAAO,CAAC,EAAE,OAAO,CAAC;CAC9B"}

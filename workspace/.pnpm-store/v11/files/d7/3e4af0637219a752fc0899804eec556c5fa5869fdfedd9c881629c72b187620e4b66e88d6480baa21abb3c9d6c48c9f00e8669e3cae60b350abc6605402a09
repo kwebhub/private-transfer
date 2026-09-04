@@ -1,0 +1,15 @@
+import { CamelCaseString, RegisteredTypeNode, RegisteredValueNode } from '@codama/nodes';
+import { LinkableDictionary, NodeStack, type Visitor } from '@codama/visitors-core';
+import { type GetImportFromFunction, type NameApi, type ParsedCustomDataOptions, type TypeManifest } from '../utils';
+export type TypeManifestVisitor = ReturnType<typeof getTypeManifestVisitor>;
+export declare function getTypeManifestVisitor(input: {
+    customAccountData: ParsedCustomDataOptions;
+    customInstructionData: ParsedCustomDataOptions;
+    erasableSyntax?: boolean;
+    getImportFrom: GetImportFromFunction;
+    linkables: LinkableDictionary;
+    nameApi: NameApi;
+    nonScalarEnums: CamelCaseString[];
+    stack?: NodeStack;
+}): Visitor<TypeManifest, RegisteredTypeNode['kind'] | RegisteredValueNode['kind'] | 'accountNode' | 'definedTypeLinkNode' | 'definedTypeNode' | 'eventNode' | 'instructionNode'>;
+//# sourceMappingURL=getTypeManifestVisitor.d.ts.map

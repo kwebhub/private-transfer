@@ -1,0 +1,3 @@
+/** The value forms accepted by a `pdaSeedValueNode`. */
+export declare const PDA_SEED_VALUE_VALUE_KINDS: ("accountValueNode" | "argumentValueNode" | "arrayValueNode" | "booleanValueNode" | "bytesValueNode" | "constantValueNode" | "enumValueNode" | "injectedValueNode" | "mapValueNode" | "noneValueNode" | "numberValueNode" | "publicKeyValueNode" | "setValueNode" | "someValueNode" | "stringValueNode" | "structValueNode" | "tupleValueNode")[];
+//# sourceMappingURL=PdaSeedValueValue.d.ts.map

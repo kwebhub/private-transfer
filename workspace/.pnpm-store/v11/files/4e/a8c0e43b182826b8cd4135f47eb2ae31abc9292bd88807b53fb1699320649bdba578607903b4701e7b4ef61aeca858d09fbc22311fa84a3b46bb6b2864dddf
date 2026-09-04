@@ -1,0 +1,12 @@
+import { AccountNode, DefinedTypeNode, EventNode, InstructionNode, PdaNode, ProgramNode } from '@codama/nodes';
+import { Fragment, RenderScope } from '../utils';
+export declare function getRootIndexPageFragment(scope: Pick<RenderScope, 'getImportPath'> & {
+    accountsToExport: AccountNode[];
+    definedTypesToExport: DefinedTypeNode[];
+    eventsToExport: EventNode[];
+    instructionsToExport: InstructionNode[];
+    pdasToExport: PdaNode[];
+    programsToExport: ProgramNode[];
+    programsWithConstantsToExport: ProgramNode[];
+}): Fragment;
+//# sourceMappingURL=rootIndexPage.d.ts.map

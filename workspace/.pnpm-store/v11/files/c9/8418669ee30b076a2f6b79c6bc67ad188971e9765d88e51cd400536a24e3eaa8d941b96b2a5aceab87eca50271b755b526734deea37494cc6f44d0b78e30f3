@@ -1,0 +1,14 @@
+import { ConstantNode, ProgramNode } from '@codama/nodes';
+import { NodePath } from '@codama/visitors-core';
+import { Fragment, RenderScope } from '../utils';
+/**
+ * Renders program constants as TypeScript value declarations.
+ *
+ * @param scope - The rendering scope and constants to render.
+ * @returns The generated constants page fragment, if constants exist.
+ */
+export declare function getConstantsPageFragment(scope: Pick<RenderScope, 'linkables' | 'nameApi' | 'typeManifestVisitor'> & {
+    nodes: ConstantNode[];
+    programPath: NodePath<ProgramNode>;
+}): Fragment | undefined;
+//# sourceMappingURL=constantPage.d.ts.map
