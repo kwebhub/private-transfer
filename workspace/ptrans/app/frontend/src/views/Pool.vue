@@ -1,21 +1,34 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 import { usePool } from "@/composables/usePool";
+import { useInitPool } from "@/composables/useInitPool";
+import { storeToRefs } from "pinia";
+import { useWalletStore } from "@/stores/wallet";
 import WalletConnect from "@/components/WalletConnect.vue";
 
-const { loading, error, poolInfo, fetchPoolInfo } = usePool();
+const walletStore = useWalletStore();
+const { isConnected } = storeToRefs(walletStore);
+
+const { loading: poolLoading, error: poolError, poolInfo, fetchPoolInfo } = usePool();
+const { loading: initLoading, error: initError, txSignature, initPool } = useInitPool();
 
 onMounted(() => {
   fetchPoolInfo();
 });
 
-const formatSol = (lamports: number) => {
-  return (lamports / 1_000_000_000).toFixed(4);
-};
-
 const formatAddress = (addr: string) => {
   if (!addr) return "";
   return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
+};
+
+const handleInitPool = async () => {
+  try {
+    await initPool();
+    // Сразу после успеха обновляем состояние страницы
+    await fetchPoolInfo();
+  } catch (err) {
+    console.error("Ошибка при инициализации:", err);
+  }
 };
 </script>
 
@@ -26,9 +39,9 @@ const formatAddress = (addr: string) => {
     WalletConnect
 
   .pool-container
-    .loading(v-if="loading") Loading pool information...
+    .loading(v-if="poolLoading") Loading pool information...
 
-    .error(v-else-if="error") {{ error }}
+    .error(v-else-if="poolError") {{ poolError }}
 
     .pool-card(v-else-if="poolInfo")
       .info-grid
@@ -37,7 +50,7 @@ const formatAddress = (addr: string) => {
           .value
             span {{ formatAddress(poolInfo.address) }}
             a(
-              :href="`https://explorer.solana.com/address/${poolInfo.address}?cluster=devnet`"
+              :href="`https://solana.com{poolInfo.address}?cluster=devnet`"
               target="_blank"
             ) 🔗
 
@@ -46,7 +59,7 @@ const formatAddress = (addr: string) => {
           .value
             span {{ formatAddress(poolInfo.vaultAddress) }}
             a(
-              :href="`https://explorer.solana.com/address/${poolInfo.vaultAddress}?cluster=devnet`"
+              :href="`https://solana.com{poolInfo.vaultAddress}?cluster=devnet`"
               target="_blank"
             ) 🔗
 
@@ -71,13 +84,32 @@ const formatAddress = (addr: string) => {
           .label Current Merkle Root
           .value.root {{ poolInfo.currentRoot }}
 
+    // Блок сработает, пока пула нет на Explorer
     .empty-state(v-else)
       p No pool information available.
       p.hint Make sure the pool is initialized.
 
-  .actions
-    button.refresh-btn(@click="fetchPoolInfo" :disabled="loading")
-      span(v-if="loading") Loading...
+      .admin-actions
+        template(v-if="isConnected")
+          button.init-btn(
+            @click="handleInitPool"
+            :disabled="initLoading"
+            :class="{ loading: initLoading }"
+          )
+            span(v-if="initLoading") Initializing Pool...
+            span(v-else) Initialize Contract Pool
+        template(v-else)
+          p.connect-prompt Please connect your admin wallet to initialize the pool.
+
+      .status-box
+        .success-msg(v-if="txSignature")
+          span 🚀 Pool successfully initialized!
+          a(:href="`https://solana.com{txSignature}?cluster=devnet`" target="_blank") View Tx
+        .error-msg(v-if="initError") {{ initError }}
+
+  .actions(v-if="poolInfo")
+    button.refresh-btn(@click="fetchPoolInfo" :disabled="poolLoading")
+      span(v-if="poolLoading") Loading...
       span(v-else) Refresh
 </template>
 
@@ -93,23 +125,12 @@ header {
   justify-content: space-between;
   align-items: center;
   padding: 24px 0;
-
-  h1 {
-    font-size: 24px;
-    font-weight: 700;
-    color: #0f172a;
-    margin: 0;
-  }
+  h1 { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0; }
 }
 
-.pool-container {
-  max-width: 720px;
-  margin: 0 auto;
-}
+.pool-container { max-width: 720px; margin: 0 auto; }
 
-.loading,
-.error,
-.empty-state {
+.loading, .error, .empty-state {
   text-align: center;
   padding: 40px;
   background: white;
@@ -117,31 +138,47 @@ header {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.error {
-  color: #ef4444;
-}
-
+.error { color: #ef4444; }
 .empty-state {
   color: #64748b;
-
-  .hint {
-    font-size: 14px;
-    margin-top: 8px;
-  }
+  .hint { font-size: 14px; margin-top: 8px; margin-bottom: 24px; }
 }
 
-.pool-card {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+.admin-actions { margin-top: 16px; display: flex; justify-content: center; }
+
+.init-btn {
+  background: #f97316;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 32px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  &:hover:not(:disabled) { background: #ea580c; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
-.info-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+.connect-prompt {
+  font-size: 14px;
+  color: #e11d48;
+  font-weight: 500;
+  background: #fff1f2;
+  border: 1px solid #ffe4e6;
+  padding: 8px 16px;
+  border-radius: 6px;
 }
+
+.status-box {
+  margin-top: 16px;
+  font-size: 14px;
+  .success-msg { color: #16a34a; font-weight: 500; a { color: #2563eb; margin-left: 8px; text-decoration: none; } }
+  .error-msg { color: #dc2626; font-weight: 500; }
+}
+
+.pool-card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
 .info-item {
   display: flex;
@@ -152,14 +189,7 @@ header {
   border-radius: 8px;
   border: 1px solid #e2e8f0;
 
-  .label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #64748b;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
+  .label { font-size: 12px; font-weight: 600; color: #64748b; uppercase: true; letter-spacing: 0.5px; }
   .value {
     font-size: 16px;
     font-weight: 500;
@@ -167,40 +197,14 @@ header {
     display: flex;
     align-items: center;
     gap: 8px;
-
-    a {
-      color: #4f46e5;
-      text-decoration: none;
-      font-size: 14px;
-
-      &:hover {
-        text-decoration: underline;
-      }
-    }
+    a { color: #4f46e5; text-decoration: none; font-size: 14px; &:hover { text-decoration: underline; } }
   }
-
-  .sub {
-    font-size: 12px;
-    color: #94a3b8;
-    font-family: monospace;
-  }
-
-  &.full {
-    grid-column: 1 / -1;
-  }
-
-  .root {
-    font-family: monospace;
-    font-size: 14px;
-    word-break: break-all;
-  }
+  .sub { font-size: 12px; color: #94a3b8; font-family: monospace; }
+  &.full { grid-column: 1 / -1; }
+  .root { font-family: monospace; font-size: 14px; word-break: break-all; }
 }
 
-.actions {
-  text-align: center;
-  margin-top: 24px;
-}
-
+.actions { text-align: center; margin-top: 24px; }
 .refresh-btn {
   background: #4f46e5;
   color: white;
@@ -211,26 +215,12 @@ header {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-
-  &:hover:not(:disabled) {
-    background: #4338ca;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
+  &:hover:not(:disabled) { background: #4338ca; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 @media (max-width: 600px) {
-  .info-grid {
-    grid-template-columns: 1fr;
-  }
-
-  header {
-    flex-direction: column;
-    gap: 16px;
-    text-align: center;
-  }
+  .info-grid { grid-template-columns: 1fr; }
+  header { flex-direction: column; gap: 16px; text-align: center; }
 }
 </style>

@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { storeToRefs } from "pinia";
+import { useWalletStore } from "@/stores/wallet";
 import { useDeposit } from "@/composables/useDeposit";
-import { useWallet } from "@/composables/useWallet";
 
-const { isConnected } = useWallet();
+const walletStore = useWalletStore();
+// Извлекаем реактивное состояние подключения напрямую из стора
+const { isConnected } = storeToRefs(walletStore);
+
 const { loading, error, txSignature, depositNote, deposit, reset, MIN_DEPOSIT } = useDeposit();
 
 const amount = ref<number>(0.01);
 const showNote = ref(false);
 
 const isValid = computed(() => {
-  return amount.value >= MIN_DEPOSIT && isConnected;
+  return amount.value >= MIN_DEPOSIT && isConnected.value;
 });
 
 const handleDeposit = async () => {
@@ -87,7 +91,7 @@ const copyNote = () => {
     .tx-info(v-if="txSignature")
       span Transaction:
       a(
-        :href="`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`"
+        :href="`https://solana.com{txSignature}?cluster=devnet`"
         target="_blank"
       ) {{ txSignature.slice(0, 8) }}...{{ txSignature.slice(-8) }}
 </template>
@@ -154,105 +158,66 @@ input {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-  margin-top: 8px;
 
   &:hover:not(:disabled) {
     background: #4338ca;
   }
 
   &:disabled {
-    opacity: 0.5;
+    background: #cbd5e1;
+    color: #94a3b8;
     cursor: not-allowed;
   }
-
-  &.loading {
-    opacity: 0.7;
-  }
 }
 
-.error {
-  color: #ef4444;
-  font-size: 14px;
-  margin-top: 8px;
-}
-
-.note-container h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #ef4444;
-  margin: 0 0 16px 0;
+.note-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  h3 { color: #ea580c; font-size: 16px; margin: 0; }
 }
 
 .note-box {
   background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 16px;
-  border: 1px solid #e2e8f0;
-  font-size: 13px;
-  word-break: break-all;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .note-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 0;
-  border-bottom: 1px solid #e2e8f0;
-
-  &:last-child {
-    border-bottom: none;
-  }
-
-  .label {
-    font-weight: 500;
-    color: #64748b;
-    font-size: 12px;
-  }
-
-  .value {
-    font-family: monospace;
-    color: #0f172a;
-    font-size: 13px;
-  }
+  font-size: 13px;
+  .label { color: #64748b; font-weight: 500; }
+  .value { font-family: monospace; color: #0f172a; word-break: break-all; }
 }
 
 .note-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 12px;
 }
 
 .note-btn {
   flex: 1;
   padding: 10px;
+  border-radius: 6px;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
   background: white;
-  font-size: 14px;
-  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background: #f1f5f9;
-    border-color: #4f46e5;
-  }
+  font-weight: 500;
+  transition: background 0.2s;
+  &:hover { background: #f8fafc; }
+  &:last-child { background: #4f46e5; color: white; border-color: #4f46e5; &:hover { background: #4338ca; } }
 }
 
 .tx-info {
-  margin-top: 16px;
+  margin-top: 8px;
   font-size: 13px;
   color: #64748b;
-
-  a {
-    color: #4f46e5;
-    text-decoration: none;
-    font-family: monospace;
-    margin-left: 8px;
-
-    &:hover {
-      text-decoration: underline;
-    }
-  }
+  a { color: #4f46e5; text-decoration: none; margin-left: 4px; &:hover { text-decoration: underline; } }
 }
 </style>

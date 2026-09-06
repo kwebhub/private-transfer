@@ -1,6 +1,5 @@
 import {
   createSolanaRpc,
-  address as solanaAddress,
   createKeyPairFromPrivateKeyBytes,
   createTransactionMessage,
   setTransactionMessageFeePayer,
@@ -9,40 +8,32 @@ import {
   pipe,
   signTransactionMessageWithSigners,
   getSignatureFromTransaction,
-  createSignerFromKeyPair
+  createSignerFromKeyPair,
+  getBase64EncodedWireTransaction
 } from "@solana/kit";
-import { getPoolInstructionAsync } from "@/generated/instructions";
+
+import { getPoolInstructionAsync } from "../generated/instructions/pool";
 
 async function main() {
-  const RPC_URL = process.env.VITE_SOLANA_RPC_URL || "https://api.devnet.solana.com";
-  const rpc = createSolanaRpc(RPC_URL);
+  const rpc = createSolanaRpc("https://api.devnet.solana.com");
+  const secretKeyString = "[190,24,234,189,169,43,13,122,30,236,240,108,176,11,45,226,128,226,118,46,153,119,207,226,45,32,99,198,64,109,134,79,53,32,72,105,150,170,238,106,251,92,9,194,51,214,243,56,112,246,146,210,1,134,65,85,40,164,106,208,237,130,95,89]";
 
-  // 1. Извлекаем приватный ключ из переменных окружения
-  const secretKeyArray = JSON.parse(process.env.WALLET_SECRET || "[]");
-  if (secretKeyArray.length === 0) {
-    throw new Error("WALLET_SECRET env variable is missing or empty");
-  }
+  const parsedNumbersArray = JSON.parse(secretKeyString);
+  const privateKeyBytes = new Uint8Array(parsedNumbersArray.slice(0, 32));
 
-  // В Web3.js v2 создание пары ключей и подписывающего Signer-объекта разделено
-  const keyPair = await createKeyPairFromPrivateKeyBytes(new Uint8Array(secretKeyArray));
+  const keyPair = await createKeyPairFromPrivateKeyBytes(privateKeyBytes);
   const authoritySigner = await createSignerFromKeyPair(keyPair);
-  const authorityAddress = solanaAddress(keyPair.publicKey);
+  const authorityAddress = authoritySigner.address;
 
-  console.log("Authority wallet loaded:", authorityAddress);
-  console.log("Initializing pool...");
+  console.log("Wallet Loaded (Authority):", authorityAddress);
+  console.log("Initializing pool in devnet block ledger...");
 
-  // 2. Генерируем инструкцию инициализации пула через Codama
-  // Функция автоматически вычислит все PDA контракта, если они размечены в IDL
   const poolInstruction = await getPoolInstructionAsync({
-    // Если в вашем методе pool() требуются специфичные аккаунты, укажите их здесь.
-    // Например, если требуется передать подписывающего админа:
-    // user: authoritySigner.address,
+    authority: authoritySigner
   });
 
-  // 3. Получаем свежий блокхеш
   const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
 
-  // 4. Компонуем транзакцию с помощью pipe
   const transactionMessage = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayer(authorityAddress, m),
@@ -50,15 +41,14 @@ async function main() {
     (m) => appendTransactionMessageInstruction(poolInstruction, m)
   );
 
-  // 5. Подписываем транзакцию нативным криптографическим ключом Node.js (работает без полифилов)
-  const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
+  const signedTransaction = await signTransactionMessageWithSigners(transactionMessage, [authoritySigner]);
   const signature = getSignatureFromTransaction(signedTransaction);
+  const wireTransactionBase64 = getBase64EncodedWireTransaction(signedTransaction);
 
-  // 6. Отправляем в сеть и ждем процессинга
-  await rpc.sendTransaction(signedTransaction, { encoding: 'base64', preflightCommitment: 'confirmed' }).send();
+  await rpc.sendTransaction(wireTransactionBase64, { encoding: 'base64', preflightCommitment: 'confirmed' }).send();
 
-  console.log("🚀 Pool successfully initialized!");
-  console.log("Transaction Signature:", signature);
+  console.log("ПУЛ УСПЕШНО ИНИЦИАЛИЗИРОВАН В БЛОКЧЕЙНЕ!");
+  console.log("Сигнатура транзакции:", signature);
 }
 
 main().catch(console.error);

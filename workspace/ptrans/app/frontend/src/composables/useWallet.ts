@@ -2,7 +2,7 @@ import { onMounted } from "vue";
 import { useWalletStore } from "@/stores/wallet";
 import { createSolanaRpc, address as solanaAddress } from "@solana/kit";
 
-const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || "https://solana.com";
+const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 
 export function useWallet() {
   const store = useWalletStore();
@@ -83,22 +83,16 @@ export function useWallet() {
     }
   }
 
-  function getActiveWalletInterface() {
-    return null;
-  }
-
   onMounted(async () => {
     const provider = getProvider();
     if (provider?.isConnected && provider?.publicKey) {
-      const addressStr = provider.publicKey.toString();
-      store.setWallet(addressStr, "Solana Extension");
+      store.setWallet(provider.publicKey.toString(), "Solana Extension");
       await refreshBalance();
     }
   });
 
   return {
     rpc,
-    getActiveWalletInterface,
     connect,
     disconnect,
     refreshBalance,

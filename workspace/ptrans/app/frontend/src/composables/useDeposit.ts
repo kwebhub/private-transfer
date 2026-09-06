@@ -1,8 +1,7 @@
 import { ref } from "vue";
 import { useWalletStore } from "@/stores/wallet";
-import { useWallet } from "@/composables/useWallet";
 import { useDepositsStore } from "@/stores/deposits";
-import { generateSecrets, computeCommitment, computeNullifierHash } from "@/services/crypto";
+import { generateSecrets, computeCommitment, computeNullifierHash, hash } from "@/services/crypto";
 import {
   createSolanaRpc,
   address as solanaAddress,
@@ -11,24 +10,54 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   appendTransactionMessageInstruction,
   pipe,
+  compileTransactionMessage,
   getSignatureFromTransaction
 } from "@solana/kit";
 import { getDepositInstructionAsync } from "@/generated/instructions";
 import { findPoolPda, findPoolVaultPda } from "@/generated/pdas";
+import { fetchPoolAcc } from "@/generated/accounts";
 
 const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || "https://api.devnet.solana.com";
+const MERKLE_TREE_DEPTH = 20;
 
 export function useDeposit() {
   const walletStore = useWalletStore();
   const depositsStore = useDepositsStore();
-  const { getActiveWalletInterface } = useWallet();
 
   const loading = ref(false);
   const error = ref<string | null>(null);
   const txSignature = ref<string | null>(null);
   const depositNote = ref<any>(null);
 
-  const MIN_DEPOSIT = 0.001; // SOL
+  const MIN_DEPOSIT = 0.001;
+
+  function getProvider() {
+    if (typeof window === "undefined") return null;
+    return (window as any).phantom?.solana || (window as any).solana || (window as any).solflare;
+  }
+
+  function calculateNextMerkleRoot(nextLeafIndex: number, newLeafBytes: Uint8Array): Uint8Array {
+    let currentLevelHash = newLeafBytes;
+    let index = nextLeafIndex;
+
+    for (let i = 0; i < MERKLE_TREE_DEPTH; i++) {
+      const emptyLevelSibling = new Uint8Array(32);
+      const pairBuffer = new Uint8Array(64);
+
+      if (index % 2 === 0) {
+        pairBuffer.set(currentLevelHash, 0);
+        pairBuffer.set(emptyLevelSibling, 32);
+      } else {
+        pairBuffer.set(emptyLevelSibling, 0);
+        pairBuffer.set(currentLevelHash, 32);
+      }
+
+      currentLevelHash = hash(pairBuffer);
+      index = Math.floor(index / 2);
+    }
+
+    return currentLevelHash;
+  }
 
   async function deposit(amountSol: number): Promise<void> {
     loading.value = true;
@@ -37,8 +66,9 @@ export function useDeposit() {
     depositNote.value = null;
 
     try {
-      if (!walletStore.isConnected || !walletStore.walletAddress) {
-        throw new Error("Wallet not connected");
+      const provider = getProvider();
+      if (!walletStore.isConnected || !walletStore.walletAddress || !provider) {
+        throw new Error("Wallet not connected or provider missing");
       }
 
       if (amountSol < MIN_DEPOSIT) {
@@ -49,20 +79,38 @@ export function useDeposit() {
       const { nullifierSecret, secret } = generateSecrets();
       const commitment = computeCommitment(nullifierSecret, secret, amountLamports);
       const nullifierHash = computeNullifierHash(nullifierSecret);
-      const newRoot = new Uint8Array(32);
 
       const rpc = createSolanaRpc(RPC_URL);
 
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
-      const userAddress = solanaAddress(walletStore.walletAddress);
+      const typedUserAddress = solanaAddress(walletStore.walletAddress);
+
+      const poolAccount = await fetchPoolAcc(rpc, poolPda);
+      const nextLeafIndex = Number(poolAccount.data.nextLeafIndex);
+
+      const targetNewRoot = calculateNextMerkleRoot(nextLeafIndex, commitment);
+
+      const depositorSigner = {
+        address: typedUserAddress,
+        signTransactions: async (transactions: any[]) => {
+          return await Promise.all(
+            transactions.map(async (tx) => {
+              return await provider.signTransaction(tx);
+            })
+          );
+        }
+      };
+
+      const correctSystemProgramAddress = solanaAddress("11111111111111111111111111111111");
 
       const depositInstruction = await getDepositInstructionAsync({
         pool: poolPda,
-        vault: vaultPda,
-        user: userAddress,
+        poolVault: vaultPda,
+        depositor: depositorSigner,
+        systemProgram: correctSystemProgramAddress,
         commitment: commitment,
-        newRoot: newRoot,
+        newRoot: targetNewRoot,
         amount: amountLamports
       });
 
@@ -70,30 +118,25 @@ export function useDeposit() {
 
       const transactionMessage = pipe(
         createTransactionMessage({ version: 0 }),
-        (m) => setTransactionMessageFeePayer(userAddress, m),
+        (m) => setTransactionMessageFeePayer(typedUserAddress, m),
         (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
         (m) => appendTransactionMessageInstruction(depositInstruction, m)
       );
 
-      let signature: string;
-      const activeWallet = getActiveWalletInterface();
+      const compiledMessage = compileTransactionMessage(transactionMessage);
 
-      if (activeWallet && activeWallet.features["solana:signTransaction"]) {
-        // Подписание по Wallet Standard
-        const signProperty = activeWallet.features["solana:signTransaction"];
-        const [signedTransaction] = await signProperty.signTransaction([transactionMessage]);
-        signature = getSignatureFromTransaction(signedTransaction);
-        await rpc.sendTransaction(signedTransaction, { encoding: 'base64', preflightCommitment: 'confirmed' }).send();
-      } else {
-        // Резервный метод подписи через глобальный window.solana
-        const provider = (window as any).phantom?.solana || (window as any).solana || (window as any).solflare;
-        if (!provider) throw new Error("Wallet provider missing during signing.");
+      const legacyTxMock = {
+        message: compiledMessage,
+        signatures: [new Uint8Array(64)],
+        serialize: function() {
+          return compiledMessage.serialize ? compiledMessage.serialize() : new Uint8Array();
+        }
+      };
 
-        const signedTx = await provider.signTransaction(transactionMessage);
-        signature = getSignatureFromTransaction(signedTx);
-        await rpc.sendTransaction(signedTx, { encoding: 'base64', preflightCommitment: 'confirmed' }).send();
-      }
+      const signedTransaction = await provider.signTransaction(legacyTxMock);
+      const signature = getSignatureFromTransaction(signedTransaction);
 
+      await rpc.sendTransaction(signedTransaction, { encoding: 'base64', preflightCommitment: 'confirmed' }).send();
       txSignature.value = signature;
 
       const note = depositsStore.addNote(
@@ -105,7 +148,7 @@ export function useDeposit() {
       );
       depositNote.value = note;
 
-      const balanceResponse = await rpc.getBalance(userAddress).send();
+      const balanceResponse = await rpc.getBalance(typedUserAddress).send();
       walletStore.setBalance(balanceResponse.value);
 
     } catch (err) {
