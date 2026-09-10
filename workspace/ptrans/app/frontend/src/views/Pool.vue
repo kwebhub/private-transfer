@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 import { usePool } from "@/composables/usePool";
-import { useInitPool } from "@/composables/useInitPool";
 import { storeToRefs } from "pinia";
 import { useWalletStore } from "@/stores/wallet";
 import WalletConnect from "@/components/WalletConnect.vue";
@@ -10,7 +9,6 @@ const walletStore = useWalletStore();
 const { isConnected } = storeToRefs(walletStore);
 
 const { loading: poolLoading, error: poolError, poolInfo, fetchPoolInfo } = usePool();
-const { loading: initLoading, error: initError, txSignature, initPool } = useInitPool();
 
 onMounted(() => {
   fetchPoolInfo();
@@ -83,29 +81,6 @@ const handleInitPool = async () => {
         .info-item.full
           .label Current Merkle Root
           .value.root {{ poolInfo.currentRoot }}
-
-    // Блок сработает, пока пула нет на Explorer
-    .empty-state(v-else)
-      p No pool information available.
-      p.hint Make sure the pool is initialized.
-
-      .admin-actions
-        template(v-if="isConnected")
-          button.init-btn(
-            @click="handleInitPool"
-            :disabled="initLoading"
-            :class="{ loading: initLoading }"
-          )
-            span(v-if="initLoading") Initializing Pool...
-            span(v-else) Initialize Contract Pool
-        template(v-else)
-          p.connect-prompt Please connect your admin wallet to initialize the pool.
-
-      .status-box
-        .success-msg(v-if="txSignature")
-          span 🚀 Pool successfully initialized!
-          a(:href="`https://solana.com{txSignature}?cluster=devnet`" target="_blank") View Tx
-        .error-msg(v-if="initError") {{ initError }}
 
   .actions(v-if="poolInfo")
     button.refresh-btn(@click="fetchPoolInfo" :disabled="poolLoading")

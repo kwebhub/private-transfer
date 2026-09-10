@@ -2,23 +2,24 @@ import { ref } from "vue";
 import { useWalletStore } from "@/stores/wallet";
 import { useDepositsStore } from "@/stores/deposits";
 import { generateSecrets, computeCommitment, computeNullifierHash, hash } from "@/services/crypto";
+import { Buffer } from "buffer";
 import {
-  createSolanaRpc,
-  address as solanaAddress,
-  createTransactionMessage,
-  setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
-  appendTransactionMessageInstruction,
-  pipe,
-  compileTransactionMessage,
-  getSignatureFromTransaction
-} from "@solana/kit";
-import { getDepositInstructionAsync } from "@/generated/instructions";
+  Connection,
+  PublicKey,
+  TransactionMessage,
+  VersionedTransaction,
+  SystemProgram,
+  TransactionInstruction,
+} from "@solana/web3.js";
+import { createSolanaRpc } from "@solana/kit";
 import { findPoolPda, findPoolVaultPda } from "@/generated/pdas";
 import { fetchPoolAcc } from "@/generated/accounts";
+import { DEPOSIT_DISCRIMINATOR } from "@/generated/instructions/deposit";
+import { PTRANS_PROGRAM_ADDRESS } from "@/generated/programs";
 
 const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || "https://api.devnet.solana.com";
-const MERKLE_TREE_DEPTH = 20;
+const MERKLE_TREE_DEPTH = Number(import.meta.env.VITE_MERKLE_TREE_DEPTH);
+const MIN_DEPOSIT = Number(import.meta.env.VITE_MIN_DEPOSIT);
 
 export function useDeposit() {
   const walletStore = useWalletStore();
@@ -29,11 +30,20 @@ export function useDeposit() {
   const txSignature = ref<string | null>(null);
   const depositNote = ref<any>(null);
 
-  const MIN_DEPOSIT = 0.001;
-
   function getProvider() {
     if (typeof window === "undefined") return null;
-    return (window as any).phantom?.solana || (window as any).solana || (window as any).solflare;
+
+    const solflare = (window as any).solflare;
+    if (solflare && solflare.isSolflare) {
+      return solflare;
+    }
+
+    const phantom = (window as any).phantom?.solana;
+    if (phantom && phantom.isPhantom) {
+      return phantom;
+    }
+
+    return (window as any).solana;
   }
 
   function calculateNextMerkleRoot(nextLeafIndex: number, newLeafBytes: Uint8Array): Uint8Array {
@@ -81,62 +91,57 @@ export function useDeposit() {
       const nullifierHash = computeNullifierHash(nullifierSecret);
 
       const rpc = createSolanaRpc(RPC_URL);
-
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
-      const typedUserAddress = solanaAddress(walletStore.walletAddress);
 
       const poolAccount = await fetchPoolAcc(rpc, poolPda);
       const nextLeafIndex = Number(poolAccount.data.nextLeafIndex);
-
       const targetNewRoot = calculateNextMerkleRoot(nextLeafIndex, commitment);
 
-      const depositorSigner = {
-        address: typedUserAddress,
-        signTransactions: async (transactions: any[]) => {
-          return await Promise.all(
-            transactions.map(async (tx) => {
-              return await provider.signTransaction(tx);
-            })
-          );
-        }
-      };
+      const connection = new Connection(RPC_URL, "confirmed");
+      const userPublicKey = new PublicKey(walletStore.walletAddress);
 
-      const correctSystemProgramAddress = solanaAddress("11111111111111111111111111111111");
+      // Формируем data инструкции БЕЗ Buffer — используем Uint8Array
+      const data = new Uint8Array(8 + 32 + 32 + 8);
+      data.set(DEPOSIT_DISCRIMINATOR, 0);
+      data.set(commitment, 8);
+      data.set(targetNewRoot, 40);
+      new DataView(data.buffer).setBigUint64(72, amountLamports, true);
 
-      const depositInstruction = await getDepositInstructionAsync({
-        pool: poolPda,
-        poolVault: vaultPda,
-        depositor: depositorSigner,
-        systemProgram: correctSystemProgramAddress,
-        commitment: commitment,
-        newRoot: targetNewRoot,
-        amount: amountLamports
+      const depositInstruction = new TransactionInstruction({
+        programId: new PublicKey(PTRANS_PROGRAM_ADDRESS),
+        keys: [
+          { pubkey: new PublicKey(poolPda), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(vaultPda), isSigner: false, isWritable: true },
+          { pubkey: userPublicKey, isSigner: true, isWritable: true },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        data: Buffer.from(data),
       });
 
-      const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+      const { blockhash } = await connection.getLatestBlockhash("confirmed");
+      const messageV0 = new TransactionMessage({
+        payerKey: userPublicKey,
+        recentBlockhash: blockhash,
+        instructions: [depositInstruction],
+      }).compileToV0Message();
 
-      const transactionMessage = pipe(
-        createTransactionMessage({ version: 0 }),
-        (m) => setTransactionMessageFeePayer(typedUserAddress, m),
-        (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
-        (m) => appendTransactionMessageInstruction(depositInstruction, m)
-      );
+      const transaction = new VersionedTransaction(messageV0);
 
-      const compiledMessage = compileTransactionMessage(transactionMessage);
+      let signature: string;
 
-      const legacyTxMock = {
-        message: compiledMessage,
-        signatures: [new Uint8Array(64)],
-        serialize: function() {
-          return compiledMessage.serialize ? compiledMessage.serialize() : new Uint8Array();
-        }
-      };
+      if (typeof provider.signAndSendTransaction === "function") {
+        const result = await provider.signAndSendTransaction(transaction);
+        signature = typeof result === "string" ? result : result.signature;
+      } else if (typeof provider.signTransaction === "function") {
+        const signedTransaction = await provider.signTransaction(transaction);
+        signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
+          preflightCommitment: "confirmed",
+        });
+      } else {
+        throw new Error("Wallet does not support transaction signing");
+      }
 
-      const signedTransaction = await provider.signTransaction(legacyTxMock);
-      const signature = getSignatureFromTransaction(signedTransaction);
-
-      await rpc.sendTransaction(signedTransaction, { encoding: 'base64', preflightCommitment: 'confirmed' }).send();
       txSignature.value = signature;
 
       const note = depositsStore.addNote(
@@ -148,9 +153,8 @@ export function useDeposit() {
       );
       depositNote.value = note;
 
-      const balanceResponse = await rpc.getBalance(typedUserAddress).send();
-      walletStore.setBalance(balanceResponse.value);
-
+      const balance = await connection.getBalance(userPublicKey);
+      walletStore.setBalance(BigInt(balance));
     } catch (err) {
       error.value = err instanceof Error ? err.message : "Deposit failed";
       console.error("Deposit error:", err);

@@ -9,15 +9,27 @@ export function useWallet() {
   const rpc = createSolanaRpc(RPC_URL);
 
   function getProvider() {
-    if (typeof window === "undefined") return null;
-    return (window as any).phantom?.solana || (window as any).solana || (window as any).solflare;
+    if (typeof window === "undefined") return { provider: null, name: "" };
+
+    if ((window as any).phantom?.solana) {
+      return { provider: (window as any).phantom.solana, name: "Phantom" };
+    }
+    if ((window as any).solflare) {
+      return { provider: (window as any).solflare, name: "Solflare" };
+    }
+    if ((window as any).solana) {
+      return { provider: (window as any).solana, name: "Solana Wallet" };
+    }
+
+    return { provider: null, name: "" };
   }
 
   function extractAddress(response: any, provider: any): string {
     if (provider && provider.publicKey) return provider.publicKey.toString();
     if (response && response.publicKey) return response.publicKey.toString();
     if (typeof response === "string") return response;
-    if (response && typeof response.toString === "function" && response !== true) return response.toString();
+    if (response && typeof response.toString === "function" && response !== true)
+      return response.toString();
     return "";
   }
 
@@ -36,7 +48,7 @@ export function useWallet() {
     store.setConnecting(true);
 
     try {
-      const provider = getProvider();
+      const { provider, name } = getProvider();
       if (!provider) {
         throw new Error("Solana wallet extension not found. Please install Phantom or Solflare.");
       }
@@ -48,20 +60,19 @@ export function useWallet() {
         throw new Error(`Invalid address extracted from wallet: ${addressStr}`);
       }
 
-      store.setWallet(addressStr, "Solana Extension");
+      store.setWallet(addressStr, name);
       await refreshBalance();
 
       if (typeof provider.on === "function") {
         provider.on("accountChanged", async (newPublicKey: any) => {
           if (newPublicKey) {
-            store.setWallet(newPublicKey.toString(), "Solana Extension");
+            store.setWallet(newPublicKey.toString(), name);
             await refreshBalance();
           } else {
             disconnect();
           }
         });
       }
-
     } catch (error) {
       console.error("Failed to connect wallet:", error);
       alert(error instanceof Error ? error.message : "Connection failed");
@@ -72,7 +83,7 @@ export function useWallet() {
 
   async function disconnect(): Promise<void> {
     try {
-      const provider = getProvider();
+      const { provider } = getProvider();
       if (provider && typeof provider.disconnect === "function") {
         await provider.disconnect();
       }
@@ -84,9 +95,9 @@ export function useWallet() {
   }
 
   onMounted(async () => {
-    const provider = getProvider();
+    const { provider, name } = getProvider();
     if (provider?.isConnected && provider?.publicKey) {
-      store.setWallet(provider.publicKey.toString(), "Solana Extension");
+      store.setWallet(provider.publicKey.toString(), name);
       await refreshBalance();
     }
   });

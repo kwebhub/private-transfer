@@ -1,5 +1,9 @@
+import type { ReadonlyUint8Array } from "@solana/kit";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex as nobleBytesToHex, hexToBytes as nobleHexToBytes } from "@noble/hashes/utils.js";
+import {
+  bytesToHex as nobleBytesToHex,
+  hexToBytes as nobleHexToBytes,
+} from "@noble/hashes/utils.js";
 
 /**
  * Генерация случайных байт заданной длины
@@ -44,9 +48,10 @@ export function computeNullifierHash(nullifierSecret: Uint8Array): Uint8Array {
 
 /**
  * Конвертация байт в hex строку
+ * Принимает как Uint8Array, так и ReadonlyUint8Array
  */
-export function bytesToHex(bytes: Uint8Array): string {
-  return nobleBytesToHex(bytes);
+export function bytesToHex(bytes: Uint8Array | ReadonlyUint8Array): string {
+  return nobleBytesToHex(bytes as Uint8Array);
 }
 
 /**

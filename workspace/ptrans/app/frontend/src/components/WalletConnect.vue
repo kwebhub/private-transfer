@@ -5,8 +5,8 @@ import { useWalletStore } from "@/stores/wallet";
 import { useWallet } from "@/composables/useWallet";
 
 const store = useWalletStore();
-// storeToRefs — это официальный способ сохранить 100% реактивность при деструктуризации
-const { isConnected, isConnecting, walletAddress, walletBalance } = storeToRefs(store);
+const { isConnected, isConnecting, walletAddress, walletBalance, activeWalletName } =
+  storeToRefs(store);
 const { connect, disconnect } = useWallet();
 
 const shortAddress = computed(() => {
@@ -38,7 +38,6 @@ const handleDisconnect = async () => {
 
 <template lang="pug">
 .wallet-container
-  // В Pug пишем чистые переменные без всяких .value! Vue развернет их сам
   template(v-if="!isConnected")
     button.wallet-connect(
       @click="handleConnect"
@@ -50,6 +49,9 @@ const handleDisconnect = async () => {
 
   template(v-else)
     .wallet-info
+      .wallet-type
+        span.type-label Wallet:
+        span.type-value {{ activeWalletName }}
       .wallet-address
         span.address-label Address:
         span.address-value {{ shortAddress }}
