@@ -5,3 +5,5 @@ target
 **/mutants.out*/
 sunspot
 journal.md
+workspace/.pnpm-store/
+.pnpm-store/
