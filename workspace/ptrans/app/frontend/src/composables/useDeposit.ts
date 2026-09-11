@@ -1,7 +1,8 @@
 import { ref } from "vue";
 import { useWalletStore } from "@/stores/wallet";
 import { useDepositsStore } from "@/stores/deposits";
-import { generateSecrets, computeCommitment, computeNullifierHash, hash } from "@/services/crypto";
+import { generateSecrets } from "@/services/crypto";
+import { computeCommitment, poseidon2Hash } from "@/services/poseidon";
 import { Buffer } from "buffer";
 import {
   Connection,
@@ -46,23 +47,28 @@ export function useDeposit() {
     return (window as any).solana;
   }
 
-  function calculateNextMerkleRoot(nextLeafIndex: number, newLeafBytes: Uint8Array): Uint8Array {
+  async function calculateNextMerkleRoot(
+    nextLeafIndex: number,
+    newLeafBytes: Uint8Array,
+  ): Promise<Uint8Array> {
     let currentLevelHash = newLeafBytes;
     let index = nextLeafIndex;
 
+    const emptySibling = new Uint8Array(32);
+
     for (let i = 0; i < MERKLE_TREE_DEPTH; i++) {
-      const emptyLevelSibling = new Uint8Array(32);
-      const pairBuffer = new Uint8Array(64);
+      let left: Uint8Array;
+      let right: Uint8Array;
 
       if (index % 2 === 0) {
-        pairBuffer.set(currentLevelHash, 0);
-        pairBuffer.set(emptyLevelSibling, 32);
+        left = currentLevelHash;
+        right = emptySibling;
       } else {
-        pairBuffer.set(emptyLevelSibling, 0);
-        pairBuffer.set(currentLevelHash, 32);
+        left = emptySibling;
+        right = currentLevelHash;
       }
 
-      currentLevelHash = hash(pairBuffer);
+      currentLevelHash = await poseidon2Hash(left, right);
       index = Math.floor(index / 2);
     }
 
@@ -87,16 +93,18 @@ export function useDeposit() {
 
       const amountLamports = BigInt(Math.floor(amountSol * 1_000_000_000));
       const { nullifierSecret, secret } = generateSecrets();
-      const commitment = computeCommitment(nullifierSecret, secret, amountLamports);
-      const nullifierHash = computeNullifierHash(nullifierSecret);
-
+      const { commitment, nullifierHash } = await computeCommitment(
+        nullifierSecret,
+        secret,
+        amountLamports,
+      );
       const rpc = createSolanaRpc(RPC_URL);
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
 
       const poolAccount = await fetchPoolAcc(rpc, poolPda);
       const nextLeafIndex = Number(poolAccount.data.nextLeafIndex);
-      const targetNewRoot = calculateNextMerkleRoot(nextLeafIndex, commitment);
+      const targetNewRoot = await calculateNextMerkleRoot(nextLeafIndex, commitment);
 
       const connection = new Connection(RPC_URL, "confirmed");
       const userPublicKey = new PublicKey(walletStore.walletAddress);

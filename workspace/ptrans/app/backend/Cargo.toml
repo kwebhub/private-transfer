@@ -1,8 +1,8 @@
 [package]
 name = "ptrans-backend"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
+edition = "2021"
+rust-version = "1.89.0"
 
 [dependencies]
 # HTTP-сервер
@@ -19,31 +19,25 @@ dotenvy = "0.15"
 anyhow = "1.0"
 
 # База данных
-sqlx = { version = "0.7", features = [
-  "runtime-tokio-native-tls",
+sqlx = { version = "0.7", default-features = false, features = [
+  "runtime-tokio",
+  "tls-native-tls",
   "postgres",
   "uuid",
   "chrono",
 ] }
 redis = { version = "0.25", features = ["tokio-comp", "ahash"] }
 
-# Криптография
-ark-bn254 = "0.4"
-ark-ff = "0.4"
-poseidon-rs = "0.0.10"
+# Утилиты
 hex = "0.4"
-bs58 = "0.5"
 base64 = "0.21"
-num-bigint = "0.4"
-num-traits = "0.2"
-rand = "0.8"
-sha2 = "0.10"
-
-# Solana
-solana-sdk = "1.18"
-solana-client = "1.18"
-solana-program = "1.18"
+uuid = { version = "1", features = ["v4"] }
 
 # Логирование
 tracing = "0.1"
 tracing-subscriber = "0.3"
+
+# HTTP-клиент для вызова prover
+reqwest = { version = "0.12", features = ["json"] }
+
+[workspace]

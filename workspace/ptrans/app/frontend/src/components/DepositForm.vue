@@ -83,6 +83,21 @@ const copyPoolAddress = async () => {
     console.error("Failed to copy:", err);
   }
 };
+
+const copiedVault = ref(false);
+
+const copyVault = async () => {
+  if (!poolInfo.value?.vaultAddress) return;
+  try {
+    await navigator.clipboard.writeText(poolInfo.value.vaultAddress);
+    copiedVault.value = true;
+    setTimeout(() => {
+      copiedVault.value = false;
+    }, 2000);
+  } catch (err) {
+    console.error("Failed to copy:", err);
+  }
+};
 </script>
 
 <template lang="pug">
@@ -99,6 +114,13 @@ const copyPoolAddress = async () => {
         .status-row
           span.status-icon ✅
           span Pool initialized
+        .address-row
+          span.label Vault:
+          span.address-value {{ formatAddress(poolInfo.vaultAddress) }}
+          button.copy-btn(
+            @click="copyVault"
+            :title="copiedVault ? 'Copied!' : 'Copy vault'"
+          ) {{ copiedVault ? '✅' : '📋' }}
         .address-row
           span.label Address:
           span.address-value {{ formatAddress(poolInfo.address) }}

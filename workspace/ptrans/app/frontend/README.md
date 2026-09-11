@@ -71,3 +71,13 @@ npm run test:e2e -- --debug
 ```sh
 npm run lint
 ```
+
+Nullifier Secret: 23de53dfe9e262d9cc287cfd048a324c25cc81179e24a588e80da819b2fac9be
+Secret: 16c7da652203b0639514c9f584cca5e49d8d597f3af56b9bf313b411bdee726d
+Amount: 0.01 SOL
+Commitment: 2ee6fcb9a1ae354148ed5decb985ef573e5e4a375280fd3fbd64ea2ec21c8e60
+
+Nullifier Secret: 29336f5439aa738b710c056b739ea8d0e61106dca667016ac01dae1c4973a90c
+Secret: 179a807da9708da0dafbfcc5ae43542d1cfac300e4af28d7a72167bca3dd4983
+Amount: 0.01 SOL
+Commitment: 2a5910a4eba1e39ca7303275aa2449724fa6597cdbab00d91bfee2f0abc7601e

@@ -1,0 +1,6 @@
+[package]
+name = "hashes"
+type = "bin"
+authors = [""]
+
+[dependencies]

@@ -1,5 +1,3 @@
-import type { ReadonlyUint8Array } from "@solana/kit";
-import { sha256 } from "@noble/hashes/sha2.js";
 import {
   bytesToHex as nobleBytesToHex,
   hexToBytes as nobleHexToBytes,
@@ -13,44 +11,9 @@ export function generateRandomBytes(length: number): Uint8Array {
 }
 
 /**
- * Хеширование SHA-256
- */
-export function hash(data: Uint8Array): Uint8Array {
-  return sha256(data);
-}
-
-/**
- * Вычисление commitment = hash(nullifierSecret + secret + amount)
- */
-export function computeCommitment(
-  nullifierSecret: Uint8Array,
-  secret: Uint8Array,
-  amount: bigint,
-): Uint8Array {
-  const amountBytes = new Uint8Array(8);
-  const view = new DataView(amountBytes.buffer);
-  view.setBigUint64(0, amount, true);
-
-  const data = new Uint8Array(nullifierSecret.length + secret.length + amountBytes.length);
-  data.set(nullifierSecret, 0);
-  data.set(secret, nullifierSecret.length);
-  data.set(amountBytes, nullifierSecret.length + secret.length);
-
-  return sha256(data);
-}
-
-/**
- * Вычисление nullifierHash = hash(nullifierSecret)
- */
-export function computeNullifierHash(nullifierSecret: Uint8Array): Uint8Array {
-  return sha256(nullifierSecret);
-}
-
-/**
  * Конвертация байт в hex строку
- * Принимает как Uint8Array, так и ReadonlyUint8Array
  */
-export function bytesToHex(bytes: Uint8Array | ReadonlyUint8Array): string {
+export function bytesToHex(bytes: Uint8Array): string {
   return nobleBytesToHex(bytes as Uint8Array);
 }
 
@@ -76,11 +39,43 @@ export function isBytesLength(bytes: Uint8Array, length: number): boolean {
 }
 
 /**
- * Создание секретной пары (nullifierSecret, secret) для депозита
+ * Модуль поля BN254 (scalar field of BN254 curve).
+ * Используется для приведения случайных байт к валидному Field-элементу.
+ */
+const BN254_FIELD_MODULUS =
+  21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+/**
+ * Конвертация 32 байт (big-endian) в Field-элемент BN254 (mod p).
+ * Если число >= модуля, оно автоматически уменьшается.
+ */
+function bytesToFieldElement(bytes: Uint8Array): Uint8Array {
+  // 1. Читаем 32 байта как big-endian BigInt
+  let value = 0n;
+  for (let i = 0; i < 32; i++) {
+    value = (value << 8n) | BigInt(bytes[i] ?? 0);
+  }
+
+  // 2. Приводим по модулю
+  value = value % BN254_FIELD_MODULUS;
+
+  // 3. Обратно в 32 байта big-endian
+  const result = new Uint8Array(32);
+  for (let i = 31; i >= 0; i--) {
+    result[i] = Number(value & 0xffn);
+    value >>= 8n;
+  }
+
+  return result;
+}
+
+/**
+ * Создание секретной пары (nullifierSecret, secret) для депозита.
+ * Оба значения приведены к Field-элементу BN254 (валидны для Noir).
  */
 export function generateSecrets(): { nullifierSecret: Uint8Array; secret: Uint8Array } {
   return {
-    nullifierSecret: generateRandomBytes(32),
-    secret: generateRandomBytes(32),
+    nullifierSecret: bytesToFieldElement(generateRandomBytes(32)),
+    secret: bytesToFieldElement(generateRandomBytes(32)),
   };
 }

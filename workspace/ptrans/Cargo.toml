@@ -1,7 +1,6 @@
 [workspace]
-members = [
-    "programs/*"
-]
+members = ["programs/*"]
+exclude = ["app/backend", "app/prover"]
 resolver = "2"
 
 [workspace.package]

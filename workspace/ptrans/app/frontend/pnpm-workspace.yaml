@@ -1,6 +1,7 @@
 allowBuilds:
   '@parcel/watcher': true
   bufferutil: true
+  msgpackr-extract: true
   utf-8-validate: true
 minimumReleaseAgeExclude:
   - sass@1.104.0
