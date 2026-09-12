@@ -37,9 +37,6 @@ export function useDeposit() {
     return null;
   }
 
-  // ================================================================
-  // Получение всех commitments из событий DepositEvent через RPC
-  // ================================================================
   async function fetchAllCommitmentsFromChain(poolAddress: string): Promise<Uint8Array[]> {
     const rpc = (body: unknown) =>
       fetch(RPC_URL, {
@@ -56,7 +53,6 @@ export function useDeposit() {
     });
 
     const sigs = sigsResp.result || [];
-
     const entries: { leafIndex: number; commitment: Uint8Array }[] = [];
 
     for (const sig of sigs) {
@@ -74,13 +70,10 @@ export function useDeposit() {
         if (!log.startsWith("Program data:")) continue;
         const b64 = log.replace("Program data: ", "").trim();
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-
-        // DepositEvent: discriminator(8) + commitment(32) + leaf_index(8) + timestamp(8) + new_root(32)
         if (bytes.length < 8 + 32 + 8 + 8 + 32) continue;
 
         const commitment = bytes.slice(8, 40);
         const leafIndex = Number(new DataView(bytes.buffer).getBigUint64(40, true));
-
         entries.push({ leafIndex, commitment });
       }
     }
@@ -89,9 +82,6 @@ export function useDeposit() {
     return entries.map((e) => e.commitment);
   }
 
-  // ================================================================
-  // Запрос нового корня у merkle-сервиса (Noir Poseidon2)
-  // ================================================================
   async function fetchNewRootFromMerkle(
     newCommitment: Uint8Array,
     existingCommitments: Uint8Array[],
@@ -114,9 +104,6 @@ export function useDeposit() {
     return hexToBytes(root);
   }
 
-  // ================================================================
-  // Депозит
-  // ================================================================
   async function deposit(amountSol: number): Promise<void> {
     loading.value = true;
     error.value = null;
@@ -141,21 +128,18 @@ export function useDeposit() {
         amountLamports,
       );
 
-      // 1. PDA-адреса
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
 
-      // 2. Получаем все существующие commitments из событий
       const existingCommitments = await fetchAllCommitmentsFromChain(poolPda);
-
-      // 3. Получаем новый корень из merkle-сервиса
       const targetNewRoot = await fetchNewRootFromMerkle(commitment, existingCommitments);
 
-      // 4. Создаём транзакцию через @solana/web3.js
-      const connection = new Connection(RPC_URL, "confirmed");
+      const connection = new Connection(RPC_URL, {
+        commitment: "confirmed",
+        confirmTransactionInitialTimeout: 30_000,
+      });
       const userPublicKey = new PublicKey(walletStore.walletAddress);
 
-      // data: discriminator(8) + commitment(32) + new_root(32) + amount(8)
       const data = new Uint8Array(8 + 32 + 32 + 8);
       data.set(DEPOSIT_DISCRIMINATOR, 0);
       data.set(commitment, 8);
@@ -173,7 +157,7 @@ export function useDeposit() {
         data: Buffer.from(data),
       });
 
-      const { blockhash } = await connection.getLatestBlockhash("confirmed");
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       const messageV0 = new TransactionMessage({
         payerKey: userPublicKey,
         recentBlockhash: blockhash,
@@ -182,24 +166,28 @@ export function useDeposit() {
 
       const transaction = new VersionedTransaction(messageV0);
 
-      // 5. Подписываем и отправляем (единый путь для Phantom и Solflare)
-      let signature: string;
+      if (typeof provider.signTransaction !== "function") {
+        throw new Error("Wallet does not support signTransaction");
+      }
 
-      if (typeof provider.signAndSendTransaction === "function") {
-        const result = await provider.signAndSendTransaction(transaction);
-        signature = typeof result === "string" ? result : result.signature;
-      } else if (typeof provider.signTransaction === "function") {
-        const signedTx = await provider.signTransaction(transaction);
-        signature = await connection.sendRawTransaction(signedTx.serialize(), {
-          preflightCommitment: "confirmed",
-        });
-      } else {
-        throw new Error("Wallet does not support transaction signing");
+      const signedTx = await provider.signTransaction(transaction);
+      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+        preflightCommitment: "confirmed",
+        skipPreflight: true,
+        maxRetries: 5,
+      });
+
+      const confirmation = await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        "confirmed",
+      );
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
       }
 
       txSignature.value = signature;
 
-      // 6. Сохраняем ноту
       const note = depositsStore.addNote(
         nullifierSecret,
         secret,
@@ -209,7 +197,6 @@ export function useDeposit() {
       );
       depositNote.value = note;
 
-      // 7. Обновляем баланс
       const balance = await connection.getBalance(userPublicKey);
       walletStore.setBalance(BigInt(balance));
     } catch (err) {

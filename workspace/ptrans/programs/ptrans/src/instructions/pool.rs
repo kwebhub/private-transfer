@@ -3,8 +3,6 @@ use crate::{EMPTY_ROOT, NULLIFIER_SEED, POOL_SEED, VAULT_SEED};
 
 #[derive(Accounts)]
 pub struct InitPool<'info> {
-    // PDA, состояние приватного пула:
-    // история корней Меркла, индекс листьев, счетчик депозитов
     #[account(
         init,
         payer = authority,
@@ -14,19 +12,16 @@ pub struct InitPool<'info> {
     )]
     pub pool: Account<'info, PoolAcc>,
 
-    // PDA, хранит хеши всех использованных нуллификаторов для указаннго пула
-    // и отслеживает повторное использованные хешей нуллификаторов
     #[account(
         init,
         payer = authority,
-        space = NullifierSetAcc::DISCRIMINATOR.len() + NullifierSetAcc::INIT_SPACE,
+        space = 8 + NullifierSetAcc::INIT_SPACE,
         seeds = [NULLIFIER_SEED, pool.key().as_ref()],
         bump
     )]
     pub nullifier_set: Account<'info, NullifierSetAcc>,
 
     /// CHECK: Vault для хранения SOL
-    // PDA, удерживает реальные SOL
     #[account(mut, seeds = [VAULT_SEED, pool.key().as_ref()], bump)]
     pub pool_vault: SystemAccount<'info>,
 
@@ -43,7 +38,6 @@ pub fn handler_pool(ctx: Context<InitPool>) -> Result<()> {
     pool.current_root_index = 0;
     pool.roots[0] = EMPTY_ROOT;
 
-    // Инициализируем все остальные корни тем же значением
     for i in 1..ROOT_HISTORY_SIZE {
         pool.roots[i] = EMPTY_ROOT;
     }

@@ -30,10 +30,6 @@ const MERKLE_TREE_DEPTH = Number(import.meta.env.VITE_MERKLE_TREE_DEPTH || 20);
 const BN254_MODULUS =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
-/**
- * Приводит 32 байта (big-endian) к модулю BN254.
- * Нужно для recipient Pubkey, который может превышать модуль.
- */
 function reduceToField(bytes: Uint8Array): Uint8Array {
   let value = 0n;
   for (let i = 0; i < 32; i++) {
@@ -65,9 +61,6 @@ export function useWithdraw() {
     return null;
   }
 
-  // ================================================================
-  // Получение commitments из событий DepositEvent через RPC
-  // ================================================================
   async function fetchCommitmentsFromChain(poolAddress: string): Promise<{
     commitments: Uint8Array[];
     latestRoot: Uint8Array;
@@ -110,7 +103,6 @@ export function useWithdraw() {
         const b64 = log.replace("Program data: ", "").trim();
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
-        // DepositEvent: discriminator(8) + commitment(32) + leaf_index(8) + timestamp(8) + new_root(32)
         if (bytes.length < 8 + 32 + 8 + 8 + 32) continue;
 
         const commitment = bytes.slice(8, 40);
@@ -133,9 +125,6 @@ export function useWithdraw() {
     };
   }
 
-  // ================================================================
-  // Построение Merkle proof для leaf_index на фронте через Noir hash2
-  // ================================================================
   async function buildMerkleProof(
     commitments: Uint8Array[],
     leafIndex: number,
@@ -174,9 +163,6 @@ export function useWithdraw() {
     return { proof, isEven };
   }
 
-  // ================================================================
-  // Основная функция withdraw
-  // ================================================================
   async function withdraw(
     nullifierSecretHex: string,
     secretHex: string,
@@ -196,7 +182,6 @@ export function useWithdraw() {
 
       const amountLamports = BigInt(Math.floor(amountSol * 1_000_000_000));
 
-      // 1. Локальный SHA-256 — только для поиска ноты в localStorage
       const nullifierSecretBytes = hexToBytes(nullifierSecretHex);
       const localNullifierHash = await computeNullifierHash(nullifierSecretBytes);
       const localNullifierHashHex = bytesToHex(localNullifierHash);
@@ -209,14 +194,12 @@ export function useWithdraw() {
         throw new Error("This deposit has already been withdrawn");
       }
 
-      // 2. Получаем commitments и последний root из блокчейна
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
       const [nullifierSetPda] = await findNullifierSetPda({ pool: poolPda });
 
       const { commitments, latestRoot } = await fetchCommitmentsFromChain(poolPda);
 
-      // 3. Находим leaf_index для нашего commitment'а
       const noteCommitmentHex = note.commitment.replace(/^0x/, "").toLowerCase();
       const leafIndex = commitments.findIndex(
         (c) => bytesToHex(c).toLowerCase() === noteCommitmentHex,
@@ -226,18 +209,14 @@ export function useWithdraw() {
         throw new Error("Your commitment not found in pool");
       }
 
-      // 4. Строим Merkle proof
       const { proof: merkleProof, isEven } = await buildMerkleProof(commitments, leafIndex);
 
-      // 5. Вычисляем nullifier_hash через Noir (Poseidon2)
       const nullifierHashBytes = await computeNullifierHash(nullifierSecretBytes);
 
-      // 6. Recipient: настоящий Pubkey для транзакции + reduced для witness
       const recipientPubkey = new PublicKey(recipientAddress);
       const recipientRealBytes = recipientPubkey.toBytes();
       const recipientReducedBytes = reduceToField(recipientRealBytes);
 
-      // 7. Генерируем witness через Noir (с reduced recipient)
       const witness = await generateWithdrawalWitness({
         root: latestRoot,
         nullifierHash: nullifierHashBytes,
@@ -251,15 +230,10 @@ export function useWithdraw() {
 
       proofGenerating.value = false;
 
-      // 8. Кодируем witness в base64 и отправляем на backend
       const witnessB64 = Buffer.from(witness).toString("base64");
       const withdrawResponse = await apiWithdraw({ witness: witnessB64 });
 
-      // 9. Декодируем proof (324 байта)
       const proofBytes = Buffer.from(withdrawResponse.proof, "base64");
-
-      // 10. Собираем data инструкции:
-      //     discriminator(8) || vec<u8>(proof) || nullifier_hash(32) || root(32) || to(32) || amount(8)
       const proofOnly = proofBytes;
 
       const data = new Uint8Array(8 + 4 + proofOnly.length + 32 + 32 + 32 + 8);
@@ -285,8 +259,10 @@ export function useWithdraw() {
 
       new DataView(data.buffer).setBigUint64(offset, amountLamports, true);
 
-      // 11. Создаём транзакцию
-      const connection = new Connection(RPC_URL, "confirmed");
+      const connection = new Connection(RPC_URL, {
+        commitment: "confirmed",
+        confirmTransactionInitialTimeout: 30_000,
+      });
       const userPublicKey = new PublicKey(walletStore.walletAddress);
 
       const withdrawInstruction = new TransactionInstruction({
@@ -314,12 +290,12 @@ export function useWithdraw() {
         data: Buffer.from(data),
       });
 
-      // Compute budget — ZK verifier требует много CU
       const computeBudgetInstruction = ComputeBudgetProgram.setComputeUnitLimit({
         units: 1_400_000,
       });
 
-      const { blockhash } = await connection.getLatestBlockhash("confirmed");
+      // ⚠️ Блокхэш берём ПОСЛЕ proof generation
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       const messageV0 = new TransactionMessage({
         payerKey: userPublicKey,
         recentBlockhash: blockhash,
@@ -328,7 +304,6 @@ export function useWithdraw() {
 
       const transaction = new VersionedTransaction(messageV0);
 
-      // 12. Подписываем напрямую через signTransaction (без симуляции Phantom)
       if (typeof provider.signTransaction !== "function") {
         throw new Error("Wallet does not support signTransaction");
       }
@@ -337,11 +312,20 @@ export function useWithdraw() {
       const signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
         preflightCommitment: "confirmed",
         skipPreflight: true,
+        maxRetries: 5,
       });
+
+      const confirmation = await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        "confirmed",
+      );
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
+      }
 
       txSignature.value = signature;
 
-      // 13. Помечаем ноту использованной по ЛОКАЛЬНОМУ SHA-256-хешу
       depositsStore.markUsed(localNullifierHashHex);
 
       const balance = await connection.getBalance(userPublicKey);

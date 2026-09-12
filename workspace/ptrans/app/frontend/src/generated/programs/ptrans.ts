@@ -73,7 +73,7 @@ export function identifyPtransAccount(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([171, 205, 239, 18, 52, 86, 120, 144]),
+        new Uint8Array([157, 213, 20, 68, 102, 39, 125, 143]),
       ),
       0,
     )

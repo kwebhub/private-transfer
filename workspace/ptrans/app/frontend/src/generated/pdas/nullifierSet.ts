@@ -28,7 +28,7 @@ export async function findNullifierSetPda(
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
-      getBytesEncoder().encode(new Uint8Array([110, 117, 108, 108, 105, 102, 105, 101, 114])),
+      getBytesEncoder().encode(new Uint8Array([110, 117, 108, 108, 105, 102, 105, 101, 114, 50])),
       getAddressEncoder().encode(seeds.pool),
     ],
   })

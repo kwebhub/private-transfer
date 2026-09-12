@@ -35,16 +35,14 @@ impl NullifierRecord {
 }
 
 #[account]
-#[derive(InitSpace)]
 pub struct NullifierSetAcc {
     pub pool: Pubkey,
-    #[max_len(1024)]
     pub nullifiers: Vec<[u8; 32]>,
 }
 
 impl NullifierSetAcc {
-    pub const DISCRIMINATOR: &'static [u8] = &[0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x90];
-    pub const INIT_SPACE: usize = 32 + 4; // pool + vec capacity
+    // 32 (pool) + 4 (vec length) + 256 * 32 (elements)
+    pub const INIT_SPACE: usize = 32 + 4 + 256 * 32;
 
     pub fn contains(&self, nullifier: &[u8; 32]) -> bool {
         self.nullifiers.contains(nullifier)

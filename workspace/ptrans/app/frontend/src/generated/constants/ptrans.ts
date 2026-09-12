@@ -9,9 +9,9 @@
 import type { ReadonlyUint8Array } from '@solana/kit'
 
 export const NULLIFIER_SEED: ReadonlyUint8Array = new Uint8Array([
-  110, 117, 108, 108, 105, 102, 105, 101, 114,
+  110, 117, 108, 108, 105, 102, 105, 101, 114, 50,
 ])
 
-export const POOL_SEED: ReadonlyUint8Array = new Uint8Array([112, 111, 111, 108])
+export const POOL_SEED: ReadonlyUint8Array = new Uint8Array([112, 111, 111, 108, 50])
 
-export const VAULT_SEED: ReadonlyUint8Array = new Uint8Array([118, 97, 117, 108, 116])
+export const VAULT_SEED: ReadonlyUint8Array = new Uint8Array([118, 97, 117, 108, 116, 50])

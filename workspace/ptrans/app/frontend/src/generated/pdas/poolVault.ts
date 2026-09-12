@@ -28,7 +28,7 @@ export async function findPoolVaultPda(
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
-      getBytesEncoder().encode(new Uint8Array([118, 97, 117, 108, 116])),
+      getBytesEncoder().encode(new Uint8Array([118, 97, 117, 108, 116, 50])),
       getAddressEncoder().encode(seeds.pool),
     ],
   })

@@ -21,6 +21,6 @@ export async function findPoolPda(
   } = config
   return await getProgramDerivedAddress({
     programAddress,
-    seeds: [getBytesEncoder().encode(new Uint8Array([112, 111, 111, 108]))],
+    seeds: [getBytesEncoder().encode(new Uint8Array([112, 111, 111, 108, 50]))],
   })
 }

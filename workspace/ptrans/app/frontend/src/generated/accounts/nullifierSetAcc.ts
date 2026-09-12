@@ -38,7 +38,7 @@ import {
 } from '@solana/kit'
 
 export const NULLIFIER_SET_ACC_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
-  171, 205, 239, 18, 52, 86, 120, 144,
+  157, 213, 20, 68, 102, 39, 125, 143,
 ])
 
 export function getNullifierSetAccDiscriminatorBytes(): ReadonlyUint8Array {

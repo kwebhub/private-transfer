@@ -72,6 +72,8 @@ npm run test:e2e -- --debug
 npm run lint
 ```
 
+8yXcTAhFPckp3cvzBXwaCvusg17TfgPGT5EK8S3RKnuF
+
 Nullifier Secret: 23de53dfe9e262d9cc287cfd048a324c25cc81179e24a588e80da819b2fac9be
 Secret: 16c7da652203b0639514c9f584cca5e49d8d597f3af56b9bf313b411bdee726d
 Amount: 0.01 SOL
@@ -86,3 +88,8 @@ Nullifier Secret: 22ace320c51747c836c44631c70dcfdd1617d4e978141777f8b67c802932e8
 Secret: 0ea2585645146f3bbefa4dab5a3e1fff69fcf057a0d5afc162938bdaf21ed3a6
 Amount: 0.01 SOL
 Commitment: 2cb8ed40e8ba7a861f022817da8a9891fcdcae09a6802c80dd66400aebc475e8
+
+Nullifier Secret: 05ccfd3926d8effb5e6848715121d0884f198fb280efdf3be310d451c8365db4
+Secret: 11390d259c0dc59d8bfbd082fb91c7cabcfd11e0f384745fdc706dd2f046af6b
+Amount: 0.01 SOL
+Commitment: 08a2d3c74d8c204042035c12cd532db1453d054e08a548f4aa2286a684be387d

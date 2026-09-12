@@ -46,6 +46,8 @@ pub fn handler_deposit(
 
     pool.next_leaf_index += 1;
     pool.total_deposits += 1;
+    pool.add_root(new_root);
+
     emit!(DepositEvent {
         commitment,
         leaf_index,
