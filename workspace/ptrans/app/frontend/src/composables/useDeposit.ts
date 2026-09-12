@@ -1,9 +1,8 @@
 import { ref } from "vue";
 import { useWalletStore } from "@/stores/wallet";
 import { useDepositsStore } from "@/stores/deposits";
-import { generateSecrets } from "@/services/crypto";
-import { computeCommitment, poseidon2Hash } from "@/services/poseidon";
-import { Buffer } from "buffer";
+import { generateSecrets, hexToBytes, bytesToHex } from "@/services/crypto";
+import { computeCommitment } from "@/services/poseidon";
 import {
   Connection,
   PublicKey,
@@ -12,14 +11,13 @@ import {
   SystemProgram,
   TransactionInstruction,
 } from "@solana/web3.js";
-import { createSolanaRpc } from "@solana/kit";
+import { Buffer } from "buffer";
 import { findPoolPda, findPoolVaultPda } from "@/generated/pdas";
-import { fetchPoolAcc } from "@/generated/accounts";
 import { DEPOSIT_DISCRIMINATOR } from "@/generated/instructions/deposit";
 import { PTRANS_PROGRAM_ADDRESS } from "@/generated/programs";
 
 const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || "https://api.devnet.solana.com";
-const MERKLE_TREE_DEPTH = Number(import.meta.env.VITE_MERKLE_TREE_DEPTH);
+const MERKLE_URL = import.meta.env.VITE_MERKLE_URL || "http://localhost:4003";
 const MIN_DEPOSIT = Number(import.meta.env.VITE_MIN_DEPOSIT);
 
 export function useDeposit() {
@@ -33,48 +31,92 @@ export function useDeposit() {
 
   function getProvider() {
     if (typeof window === "undefined") return null;
-
-    const solflare = (window as any).solflare;
-    if (solflare && solflare.isSolflare) {
-      return solflare;
-    }
-
-    const phantom = (window as any).phantom?.solana;
-    if (phantom && phantom.isPhantom) {
-      return phantom;
-    }
-
-    return (window as any).solana;
+    if ((window as any).phantom?.solana) return (window as any).phantom.solana;
+    if ((window as any).solflare) return (window as any).solflare;
+    if ((window as any).solana) return (window as any).solana;
+    return null;
   }
 
-  async function calculateNextMerkleRoot(
-    nextLeafIndex: number,
-    newLeafBytes: Uint8Array,
-  ): Promise<Uint8Array> {
-    let currentLevelHash = newLeafBytes;
-    let index = nextLeafIndex;
+  // ================================================================
+  // Получение всех commitments из событий DepositEvent через RPC
+  // ================================================================
+  async function fetchAllCommitmentsFromChain(poolAddress: string): Promise<Uint8Array[]> {
+    const rpc = (body: unknown) =>
+      fetch(RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.json());
 
-    const emptySibling = new Uint8Array(32);
+    const sigsResp = await rpc({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getSignaturesForAddress",
+      params: [poolAddress, { limit: 1000 }],
+    });
 
-    for (let i = 0; i < MERKLE_TREE_DEPTH; i++) {
-      let left: Uint8Array;
-      let right: Uint8Array;
+    const sigs = sigsResp.result || [];
 
-      if (index % 2 === 0) {
-        left = currentLevelHash;
-        right = emptySibling;
-      } else {
-        left = emptySibling;
-        right = currentLevelHash;
+    const entries: { leafIndex: number; commitment: Uint8Array }[] = [];
+
+    for (const sig of sigs) {
+      const txResp = await rpc({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getTransaction",
+        params: [sig.signature, { encoding: "json", maxSupportedTransactionVersion: 0 }],
+      });
+
+      const tx = txResp.result;
+      if (!tx?.meta?.logMessages) continue;
+
+      for (const log of tx.meta.logMessages) {
+        if (!log.startsWith("Program data:")) continue;
+        const b64 = log.replace("Program data: ", "").trim();
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+        // DepositEvent: discriminator(8) + commitment(32) + leaf_index(8) + timestamp(8) + new_root(32)
+        if (bytes.length < 8 + 32 + 8 + 8 + 32) continue;
+
+        const commitment = bytes.slice(8, 40);
+        const leafIndex = Number(new DataView(bytes.buffer).getBigUint64(40, true));
+
+        entries.push({ leafIndex, commitment });
       }
-
-      currentLevelHash = await poseidon2Hash(left, right);
-      index = Math.floor(index / 2);
     }
 
-    return currentLevelHash;
+    entries.sort((a, b) => a.leafIndex - b.leafIndex);
+    return entries.map((e) => e.commitment);
   }
 
+  // ================================================================
+  // Запрос нового корня у merkle-сервиса (Noir Poseidon2)
+  // ================================================================
+  async function fetchNewRootFromMerkle(
+    newCommitment: Uint8Array,
+    existingCommitments: Uint8Array[],
+  ): Promise<Uint8Array> {
+    const allCommitments = [...existingCommitments, newCommitment];
+    const commitmentsHex = allCommitments.map((c) => bytesToHex(c));
+
+    const resp = await fetch(`${MERKLE_URL}/root`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commitments: commitmentsHex }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`Merkle service error: ${resp.status} ${err}`);
+    }
+
+    const { root } = await resp.json();
+    return hexToBytes(root);
+  }
+
+  // ================================================================
+  // Депозит
+  // ================================================================
   async function deposit(amountSol: number): Promise<void> {
     loading.value = true;
     error.value = null;
@@ -98,18 +140,22 @@ export function useDeposit() {
         secret,
         amountLamports,
       );
-      const rpc = createSolanaRpc(RPC_URL);
+
+      // 1. PDA-адреса
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
 
-      const poolAccount = await fetchPoolAcc(rpc, poolPda);
-      const nextLeafIndex = Number(poolAccount.data.nextLeafIndex);
-      const targetNewRoot = await calculateNextMerkleRoot(nextLeafIndex, commitment);
+      // 2. Получаем все существующие commitments из событий
+      const existingCommitments = await fetchAllCommitmentsFromChain(poolPda);
 
+      // 3. Получаем новый корень из merkle-сервиса
+      const targetNewRoot = await fetchNewRootFromMerkle(commitment, existingCommitments);
+
+      // 4. Создаём транзакцию через @solana/web3.js
       const connection = new Connection(RPC_URL, "confirmed");
       const userPublicKey = new PublicKey(walletStore.walletAddress);
 
-      // Формируем data инструкции БЕЗ Buffer — используем Uint8Array
+      // data: discriminator(8) + commitment(32) + new_root(32) + amount(8)
       const data = new Uint8Array(8 + 32 + 32 + 8);
       data.set(DEPOSIT_DISCRIMINATOR, 0);
       data.set(commitment, 8);
@@ -136,14 +182,15 @@ export function useDeposit() {
 
       const transaction = new VersionedTransaction(messageV0);
 
+      // 5. Подписываем и отправляем (единый путь для Phantom и Solflare)
       let signature: string;
 
       if (typeof provider.signAndSendTransaction === "function") {
         const result = await provider.signAndSendTransaction(transaction);
         signature = typeof result === "string" ? result : result.signature;
       } else if (typeof provider.signTransaction === "function") {
-        const signedTransaction = await provider.signTransaction(transaction);
-        signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
+        const signedTx = await provider.signTransaction(transaction);
+        signature = await connection.sendRawTransaction(signedTx.serialize(), {
           preflightCommitment: "confirmed",
         });
       } else {
@@ -152,6 +199,7 @@ export function useDeposit() {
 
       txSignature.value = signature;
 
+      // 6. Сохраняем ноту
       const note = depositsStore.addNote(
         nullifierSecret,
         secret,
@@ -161,6 +209,7 @@ export function useDeposit() {
       );
       depositNote.value = note;
 
+      // 7. Обновляем баланс
       const balance = await connection.getBalance(userPublicKey);
       walletStore.setBalance(BigInt(balance));
     } catch (err) {

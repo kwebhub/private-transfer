@@ -5,6 +5,11 @@ let hashesCircuitPromise: Promise<any> | null = null;
 let hash2CircuitPromise: Promise<any> | null = null;
 let withdrawalCircuitPromise: Promise<any> | null = null;
 
+// ============ Кеш инстансов Noir ============
+let hashesNoirPromise: Promise<Noir> | null = null;
+let hash2NoirPromise: Promise<Noir> | null = null;
+let withdrawalNoirPromise: Promise<Noir> | null = null;
+
 async function loadHashesCircuit(): Promise<any> {
   if (!hashesCircuitPromise) {
     hashesCircuitPromise = fetch("/circuits/hashes.json").then((r) => {
@@ -33,6 +38,29 @@ async function loadWithdrawalCircuit(): Promise<any> {
     });
   }
   return withdrawalCircuitPromise;
+}
+
+// ============ Получение (кешированных) инстансов Noir ============
+
+async function getHashesNoir(): Promise<Noir> {
+  if (!hashesNoirPromise) {
+    hashesNoirPromise = loadHashesCircuit().then((c) => new Noir(c));
+  }
+  return hashesNoirPromise;
+}
+
+async function getHash2Noir(): Promise<Noir> {
+  if (!hash2NoirPromise) {
+    hash2NoirPromise = loadHash2Circuit().then((c) => new Noir(c));
+  }
+  return hash2NoirPromise;
+}
+
+async function getWithdrawalNoir(): Promise<Noir> {
+  if (!withdrawalNoirPromise) {
+    withdrawalNoirPromise = loadWithdrawalCircuit().then((c) => new Noir(c));
+  }
+  return withdrawalNoirPromise;
 }
 
 // ============ Утилиты конвертации ============
@@ -81,8 +109,7 @@ export async function computeCommitment(
   secret: Uint8Array,
   amount: bigint,
 ): Promise<CommitmentResult> {
-  const circuit = await loadHashesCircuit();
-  const noir = new Noir(circuit);
+  const noir = await getHashesNoir();
 
   const inputs = {
     nullifier: bytesToFieldHex(nullifierSecret),
@@ -106,8 +133,7 @@ export async function computeCommitment(
  * Полезно для поиска ноты в localStorage.
  */
 export async function computeNullifierHash(nullifierSecret: Uint8Array): Promise<Uint8Array> {
-  const circuit = await loadHashesCircuit();
-  const noir = new Noir(circuit);
+  const noir = await getHashesNoir();
 
   const inputs = {
     nullifier: bytesToFieldHex(nullifierSecret),
@@ -129,8 +155,7 @@ export async function computeNullifierHash(nullifierSecret: Uint8Array): Promise
  * Используется для вычисления корня Merkle Tree.
  */
 export async function poseidon2Hash(left: Uint8Array, right: Uint8Array): Promise<Uint8Array> {
-  const circuit = await loadHash2Circuit();
-  const noir = new Noir(circuit);
+  const noir = await getHash2Noir();
 
   const { returnValue } = await noir.execute({
     left: bytesToFieldHex(left),
@@ -158,8 +183,7 @@ export interface WitnessInputs {
  * Возвращает gzip-сжатый witness (Uint8Array), готовый для отправки на сервер.
  */
 export async function generateWithdrawalWitness(inputs: WitnessInputs): Promise<Uint8Array> {
-  const circuit = await loadWithdrawalCircuit();
-  const noir = new Noir(circuit);
+  const noir = await getWithdrawalNoir();
 
   const executionInputs = {
     root: bytesToFieldHex(inputs.root),
