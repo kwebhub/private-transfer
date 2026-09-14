@@ -1,3 +1,4 @@
+mod cache;
 mod config;
 mod db;
 mod indexer;
@@ -17,6 +18,7 @@ use tower_http::cors::CorsLayer;
 #[derive(Clone)]
 struct AppState {
     db: Arc<db::Db>,
+    cache: Arc<cache::Cache>,
 }
 
 #[derive(Deserialize)]
@@ -35,18 +37,18 @@ struct CommitmentsQuery {
     pool_address: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct CommitmentEntry {
     leaf_index: i64,
     commitment: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct CommitmentsResponse {
     commitments: Vec<CommitmentEntry>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct RootResponse {
     root: String,
 }
@@ -108,6 +110,16 @@ async fn handle_commitments(
     State(state): State<AppState>,
     Query(query): Query<CommitmentsQuery>,
 ) -> Result<Json<CommitmentsResponse>, (StatusCode, String)> {
+    let cache_key = format!("commitments:{}", query.pool_address);
+
+    // 1. Проверяем кеш
+    if let Ok(Some(cached)) = state.cache.get(&cache_key).await {
+        if let Ok(parsed) = serde_json::from_str::<CommitmentsResponse>(&cached) {
+            return Ok(Json(parsed));
+        }
+    }
+
+    // 2. Cache miss — идём в БД
     let rows = state
         .db
         .get_commitments(&query.pool_address)
@@ -125,15 +137,32 @@ async fn handle_commitments(
             leaf_index,
             commitment: hex::encode(commitment),
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-    Ok(Json(CommitmentsResponse { commitments }))
+    let response = CommitmentsResponse { commitments };
+
+    // 3. Пишем в кеш на 30 секунд
+    if let Ok(serialized) = serde_json::to_string(&response) {
+        let _ = state.cache.set_ex(&cache_key, &serialized, 30).await;
+    }
+
+    Ok(Json(response))
 }
 
 async fn handle_root(
     State(state): State<AppState>,
     Query(query): Query<CommitmentsQuery>,
 ) -> Result<Json<RootResponse>, (StatusCode, String)> {
+    let cache_key = format!("root:{}", query.pool_address);
+
+    // 1. Проверяем кеш
+    if let Ok(Some(cached)) = state.cache.get(&cache_key).await {
+        if let Ok(parsed) = serde_json::from_str::<RootResponse>(&cached) {
+            return Ok(Json(parsed));
+        }
+    }
+
+    // 2. Cache miss — идём в БД
     let root = state
         .db
         .get_latest_root(&query.pool_address)
@@ -146,9 +175,18 @@ async fn handle_root(
         })?;
 
     match root {
-        Some(r) => Ok(Json(RootResponse {
-            root: hex::encode(r),
-        })),
+        Some(r) => {
+            let response = RootResponse {
+                root: hex::encode(r),
+            };
+
+            // 3. Пишем в кеш на 30 секунд
+            if let Ok(serialized) = serde_json::to_string(&response) {
+                let _ = state.cache.set_ex(&cache_key, &serialized, 30).await;
+            }
+
+            Ok(Json(response))
+        }
         None => Err((StatusCode::NOT_FOUND, "No root found".to_string())),
     }
 }
@@ -165,8 +203,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = db::Db::new(&database_url).await?;
     println!("✅ Connected to Postgres");
 
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    let cache = cache::Cache::new(&redis_url).await?;
+    println!("✅ Connected to Redis");
+
     let db_arc = Arc::new(db);
-    let state = AppState { db: db_arc.clone() };
+    let cache_arc = Arc::new(cache);
+
+    let state = AppState {
+        db: db_arc.clone(),
+        cache: cache_arc.clone(),
+    };
 
     // Запускаем индексер в фоне
     let rpc_url = std::env::var("SOLANA_RPC_URL")
@@ -174,7 +222,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool_address = std::env::var("POOL_ADDRESS")
         .unwrap_or_else(|_| "3ENojXMjs7H87eNfHMgSbbRf486rCwcAvk8sPszL9cWq".to_string());
 
-    let indexer = indexer::Indexer::new(db_arc.clone(), rpc_url, pool_address);
+    let indexer = indexer::Indexer::new(db_arc.clone(), cache_arc.clone(), rpc_url, pool_address);
     tokio::spawn(async move {
         indexer.run().await;
     });
@@ -193,8 +241,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Backend server running on http://{}", addr);
     println!("📡 Endpoints:");
     println!("  POST /api/withdraw    - Proxy to prover service");
-    println!("  GET  /api/commitments - List all commitments");
-    println!("  GET  /api/root        - Get latest root");
+    println!("  GET  /api/commitments - List all commitments (cached)");
+    println!("  GET  /api/root        - Get latest root (cached)");
     println!("  GET  /api/health      - Health check (with DB status)");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;

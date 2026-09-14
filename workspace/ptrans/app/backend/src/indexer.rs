@@ -1,3 +1,4 @@
+use crate::cache::Cache;
 use crate::db::Db;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -6,14 +7,16 @@ const POLL_INTERVAL_SECS: u64 = 5;
 
 pub struct Indexer {
     db: Arc<Db>,
+    cache: Arc<Cache>,
     rpc_url: String,
     pool_address: String,
 }
 
 impl Indexer {
-    pub fn new(db: Arc<Db>, rpc_url: String, pool_address: String) -> Self {
+    pub fn new(db: Arc<Db>, cache: Arc<Cache>, rpc_url: String, pool_address: String) -> Self {
         Self {
             db,
+            cache,
             rpc_url,
             pool_address,
         }
@@ -121,6 +124,9 @@ impl Indexer {
                             signature,
                         )
                         .await?;
+
+                    // Инвалидируем кеш
+                    let _ = self.cache.invalidate_pool(&self.pool_address).await;
 
                     println!(
                         "📥 Indexed deposit: leaf={} commitment={}",
