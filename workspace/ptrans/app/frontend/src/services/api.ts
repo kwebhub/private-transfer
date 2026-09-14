@@ -11,7 +11,7 @@ export interface WithdrawResponse {
 
 export interface CommitmentEntry {
   leaf_index: number;
-  commitment: string; // hex
+  commitment: string;
 }
 
 export interface CommitmentsResponse {
@@ -19,7 +19,13 @@ export interface CommitmentsResponse {
 }
 
 export interface RootResponse {
-  root: string; // hex
+  root: string;
+}
+
+export interface ProofResponse {
+  proof: string[];
+  is_even: boolean[];
+  root: string;
 }
 
 /**
@@ -67,6 +73,22 @@ export async function getLatestRoot(poolAddress: string): Promise<RootResponse> 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(error.error || "Failed to fetch root");
+  }
+
+  return response.json();
+}
+
+/**
+ * Получить Merkle proof для leaf_index
+ */
+export async function getProof(poolAddress: string, leafIndex: number): Promise<ProofResponse> {
+  const response = await fetch(
+    `${API_URL}/api/proof?pool_address=${encodeURIComponent(poolAddress)}&leaf_index=${leafIndex}`,
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(error.error || "Failed to fetch proof");
   }
 
   return response.json();

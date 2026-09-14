@@ -53,6 +53,19 @@ struct RootResponse {
     root: String,
 }
 
+#[derive(Deserialize)]
+struct ProofQuery {
+    pool_address: String,
+    leaf_index: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ProofResponse {
+    proof: Vec<String>,
+    is_even: Vec<bool>,
+    root: String,
+}
+
 // ============ ХЭНДЛЕРЫ ============
 
 async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value> {
@@ -180,7 +193,6 @@ async fn handle_root(
                 root: hex::encode(r),
             };
 
-            // 3. Пишем в кеш на 30 секунд
             if let Ok(serialized) = serde_json::to_string(&response) {
                 let _ = state.cache.set_ex(&cache_key, &serialized, 30).await;
             }
@@ -189,6 +201,79 @@ async fn handle_root(
         }
         None => Err((StatusCode::NOT_FOUND, "No root found".to_string())),
     }
+}
+
+async fn handle_proof(
+    State(state): State<AppState>,
+    Query(query): Query<ProofQuery>,
+) -> Result<Json<ProofResponse>, (StatusCode, String)> {
+    // 1. Получаем commitments из БД
+    let rows = state
+        .db
+        .get_commitments(&query.pool_address)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("DB error: {}", e),
+            )
+        })?;
+
+    if rows.is_empty() {
+        return Err((StatusCode::NOT_FOUND, "No commitments found".to_string()));
+    }
+
+    // 2. Проверяем, что leaf_index в диапазоне
+    if query.leaf_index < 0 || query.leaf_index as usize >= rows.len() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "leaf_index out of range".to_string(),
+        ));
+    }
+
+    // 3. Проксируем в merkle-сервис
+    let merkle_url =
+        std::env::var("MERKLE_URL").unwrap_or_else(|_| "http://localhost:4003".to_string());
+    let url = format!("{}/proof", merkle_url);
+
+    let commitments_hex: Vec<String> = rows
+        .into_iter()
+        .map(|(_, commitment)| hex::encode(commitment))
+        .collect();
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "commitments": commitments_hex,
+            "leaf_index": query.leaf_index,
+        }))
+        .send()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Merkle request failed: {}", e),
+            )
+        })?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!("Merkle error {}: {}", status, body),
+        ));
+    }
+
+    let merkle_response: ProofResponse = resp.json().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Invalid merkle response: {}", e),
+        )
+    })?;
+
+    Ok(Json(merkle_response))
 }
 
 // ============ MAIN ============
@@ -216,7 +301,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cache: cache_arc.clone(),
     };
 
-    // Запускаем индексер в фоне
     let rpc_url = std::env::var("SOLANA_RPC_URL")
         .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
     let pool_address = std::env::var("POOL_ADDRESS")
@@ -232,6 +316,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/withdraw", post(handle_withdraw))
         .route("/api/commitments", get(handle_commitments))
         .route("/api/root", get(handle_root))
+        .route("/api/proof", get(handle_proof))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -243,6 +328,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  POST /api/withdraw    - Proxy to prover service");
     println!("  GET  /api/commitments - List all commitments (cached)");
     println!("  GET  /api/root        - Get latest root (cached)");
+    println!("  GET  /api/proof       - Get Merkle proof (proxy to merkle service)");
     println!("  GET  /api/health      - Health check (with DB status)");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;

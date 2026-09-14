@@ -2,12 +2,8 @@ import { ref } from "vue";
 import { useWalletStore } from "@/stores/wallet";
 import { useDepositsStore } from "@/stores/deposits";
 import { hexToBytes, bytesToHex } from "@/services/crypto";
-import {
-  computeNullifierHash,
-  generateWithdrawalWitness,
-  poseidon2Hash,
-} from "@/services/poseidon";
-import { withdraw as apiWithdraw, getCommitments } from "@/services/api";
+import { computeNullifierHash, generateWithdrawalWitness } from "@/services/poseidon";
+import { withdraw as apiWithdraw, getCommitments, getProof } from "@/services/api";
 import {
   Connection,
   PublicKey,
@@ -25,7 +21,6 @@ import { PTRANS_PROGRAM_ADDRESS } from "@/generated/programs";
 const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 const VERIFIER_PROGRAM_ID =
   import.meta.env.VITE_VERIFIER_PROGRAM_ID || "EewognjaJhZUQgP59BrCx5SaJcsFQ6sn65FEwZ2FdZhg";
-const MERKLE_TREE_DEPTH = Number(import.meta.env.VITE_MERKLE_TREE_DEPTH || 20);
 
 const BN254_MODULUS =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;
@@ -59,64 +54,6 @@ export function useWithdraw() {
     if ((window as any).solflare) return (window as any).solflare;
     if ((window as any).solana) return (window as any).solana;
     return null;
-  }
-
-  async function buildMerkleProof(
-    commitments: Uint8Array[],
-    leafIndex: number,
-  ): Promise<{ proof: Uint8Array[]; isEven: boolean[] }> {
-    const emptyLeaf = new Uint8Array(32);
-    const cache = new Map<string, Uint8Array>();
-
-    async function getNode(level: number, index: number): Promise<Uint8Array> {
-      if (level === 0) {
-        return index < commitments.length ? commitments[index]! : emptyLeaf;
-      }
-
-      const key = `${level}:${index}`;
-      if (cache.has(key)) return cache.get(key)!;
-
-      const left = await getNode(level - 1, index * 2);
-      const right = await getNode(level - 1, index * 2 + 1);
-      const hash = await poseidon2Hash(left, right);
-
-      cache.set(key, hash);
-      return hash;
-    }
-
-    const proof: Uint8Array[] = [];
-    const isEven: boolean[] = [];
-
-    let idx = leafIndex;
-    for (let d = 0; d < MERKLE_TREE_DEPTH; d++) {
-      const siblingIdx = idx % 2 === 0 ? idx + 1 : idx - 1;
-      const sibling = await getNode(d, siblingIdx);
-      proof.push(sibling);
-      isEven.push(idx % 2 === 0);
-      idx = Math.floor(idx / 2);
-    }
-
-    return { proof, isEven };
-  }
-
-  async function computeLatestRoot(commitments: Uint8Array[]): Promise<Uint8Array> {
-    const emptyLeaf = new Uint8Array(32);
-    const cache = new Map<string, Uint8Array>();
-
-    async function getNode(level: number, index: number): Promise<Uint8Array> {
-      if (level === 0) {
-        return index < commitments.length ? commitments[index]! : emptyLeaf;
-      }
-      const key = `${level}:${index}`;
-      if (cache.has(key)) return cache.get(key)!;
-      const left = await getNode(level - 1, index * 2);
-      const right = await getNode(level - 1, index * 2 + 1);
-      const hash = await poseidon2Hash(left, right);
-      cache.set(key, hash);
-      return hash;
-    }
-
-    return await getNode(MERKLE_TREE_DEPTH, 0);
   }
 
   async function withdraw(
@@ -154,7 +91,7 @@ export function useWithdraw() {
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
       const [nullifierSetPda] = await findNullifierSetPda({ pool: poolPda });
 
-      // 1. Получаем commitments из backend (не через RPC!)
+      // 1. Получаем commitments из backend
       const commitmentsResponse = await getCommitments(poolPda);
       const sortedCommitments = commitmentsResponse.commitments
         .sort((a, b) => a.leaf_index - b.leaf_index)
@@ -164,10 +101,7 @@ export function useWithdraw() {
         throw new Error("No commitments in database");
       }
 
-      // 2. Вычисляем актуальный root из commitments
-      const latestRoot = await computeLatestRoot(sortedCommitments);
-
-      // 3. Находим leaf_index для нашего commitment'а
+      // 2. Находим leaf_index для нашего commitment'а
       const noteCommitmentHex = note.commitment.replace(/^0x/, "").toLowerCase();
       const leafIndex = sortedCommitments.findIndex(
         (c) => bytesToHex(c).toLowerCase() === noteCommitmentHex,
@@ -177,18 +111,21 @@ export function useWithdraw() {
         throw new Error("Your commitment not found in pool");
       }
 
-      // 4. Строим Merkle proof
-      const { proof: merkleProof, isEven } = await buildMerkleProof(sortedCommitments, leafIndex);
+      // 3. Получаем Merkle proof из backend (проксируется в merkle-сервис)
+      const proofResponse = await getProof(poolPda, leafIndex);
+      const merkleProof = proofResponse.proof.map((h) => hexToBytes(h));
+      const isEven = proofResponse.is_even;
+      const latestRoot = hexToBytes(proofResponse.root);
 
-      // 5. Вычисляем nullifier_hash через Noir
+      // 4. Вычисляем nullifier_hash через Noir
       const nullifierHashBytes = await computeNullifierHash(nullifierSecretBytes);
 
-      // 6. Recipient
+      // 5. Recipient
       const recipientPubkey = new PublicKey(recipientAddress);
       const recipientRealBytes = recipientPubkey.toBytes();
       const recipientReducedBytes = reduceToField(recipientRealBytes);
 
-      // 7. Генерируем witness
+      // 6. Генерируем witness
       const witness = await generateWithdrawalWitness({
         root: latestRoot,
         nullifierHash: nullifierHashBytes,
