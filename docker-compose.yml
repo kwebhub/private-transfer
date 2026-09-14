@@ -12,8 +12,35 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '6.00'
+          cpus: "6.00"
           memory: 8g
     environment:
       - CARGO_TERM_COLOR=always
     network_mode: host
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ptrans-postgres
+    environment:
+      POSTGRES_USER: ptrans
+      POSTGRES_PASSWORD: ptrans_dev_password
+      POSTGRES_DB: ptrans
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ptrans-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:
+  redis_data:

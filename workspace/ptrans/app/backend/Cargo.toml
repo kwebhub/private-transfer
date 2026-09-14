@@ -25,12 +25,14 @@ sqlx = { version = "0.7", default-features = false, features = [
   "postgres",
   "uuid",
   "chrono",
+  "json",
 ] }
 redis = { version = "0.25", features = ["tokio-comp", "ahash"] }
 
 # Утилиты
 hex = "0.4"
 base64 = "0.21"
+bs58 = "0.5"
 uuid = { version = "1", features = ["v4"] }
 
 # Логирование
