@@ -3,6 +3,7 @@ import { useWalletStore } from "@/stores/wallet";
 import { useDepositsStore } from "@/stores/deposits";
 import { generateSecrets, hexToBytes, bytesToHex } from "@/services/crypto";
 import { computeCommitment } from "@/services/poseidon";
+import { getCommitments } from "@/services/api";
 import {
   Connection,
   PublicKey,
@@ -35,51 +36,6 @@ export function useDeposit() {
     if ((window as any).solflare) return (window as any).solflare;
     if ((window as any).solana) return (window as any).solana;
     return null;
-  }
-
-  async function fetchAllCommitmentsFromChain(poolAddress: string): Promise<Uint8Array[]> {
-    const rpc = (body: unknown) =>
-      fetch(RPC_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => r.json());
-
-    const sigsResp = await rpc({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "getSignaturesForAddress",
-      params: [poolAddress, { limit: 1000 }],
-    });
-
-    const sigs = sigsResp.result || [];
-    const entries: { leafIndex: number; commitment: Uint8Array }[] = [];
-
-    for (const sig of sigs) {
-      const txResp = await rpc({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getTransaction",
-        params: [sig.signature, { encoding: "json", maxSupportedTransactionVersion: 0 }],
-      });
-
-      const tx = txResp.result;
-      if (!tx?.meta?.logMessages) continue;
-
-      for (const log of tx.meta.logMessages) {
-        if (!log.startsWith("Program data:")) continue;
-        const b64 = log.replace("Program data: ", "").trim();
-        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        if (bytes.length < 8 + 32 + 8 + 8 + 32) continue;
-
-        const commitment = bytes.slice(8, 40);
-        const leafIndex = Number(new DataView(bytes.buffer).getBigUint64(40, true));
-        entries.push({ leafIndex, commitment });
-      }
-    }
-
-    entries.sort((a, b) => a.leafIndex - b.leafIndex);
-    return entries.map((e) => e.commitment);
   }
 
   async function fetchNewRootFromMerkle(
@@ -131,9 +87,16 @@ export function useDeposit() {
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
 
-      const existingCommitments = await fetchAllCommitmentsFromChain(poolPda);
+      // 1. Получаем существующие commitments из backend (не через RPC!)
+      const commitmentsResponse = await getCommitments(poolPda);
+      const existingCommitments = commitmentsResponse.commitments
+        .sort((a, b) => a.leaf_index - b.leaf_index)
+        .map((e) => hexToBytes(e.commitment));
+
+      // 2. Получаем новый root из merkle-сервиса
       const targetNewRoot = await fetchNewRootFromMerkle(commitment, existingCommitments);
 
+      // 3. Создаём транзакцию
       const connection = new Connection(RPC_URL, {
         commitment: "confirmed",
         confirmTransactionInitialTimeout: 30_000,
