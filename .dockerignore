@@ -1,72 +1,46 @@
+# ============ Git ============
+.git
+.gitignore
+
 # ============ Rust ============
 target/
 **/target/
 Cargo.lock.bak
-*.rs.bk
 
 # ============ Node.js ============
 node_modules/
 **/node_modules/
 .pnpm-store/
-*.log
-npm-debug.log*
-pnpm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+**/.pnpm-store/
 
 # ============ Vue / Vite ============
 dist/
-dist-ssr/
 .vite/
-*.local
 
 # ============ Anchor ============
 .anchor/
 test-ledger/
-**/test-ledger/
-
-# ============ Noir ============
-**/target/*.json
-**/target/*.gz
-**/target/*.ccs
-**/target/*.pk
-**/target/*.vk
-**/target/*.proof
-**/target/*.pw
-**/target/*.so
-!**/target/withdrawal-keypair.json
 
 # ============ Env ============
 .env
 .env.local
 .env.*.local
-!.env.example
-
-# ============ Solana keypairs ============
-*.json.keypair
-**/id.json
-**/*-keypair.json
-!**/withdrawal-keypair.json
 
 # ============ Docker ============
-.docker/
+docker-compose.yml
+Dockerfile
 
 # ============ IDE ============
 .idea/
 .vscode/
 *.swp
-*.swo
-*~
 
 # ============ OS ============
 .DS_Store
 Thumbs.db
 
-# ============ Tests ============
-coverage/
-.nyc_output/
-playwright-report/
-test-results/
+# ============ Logs ============
+*.log
 
 # ============ Prometheus / Grafana ============
 prometheus-data/
@@ -76,5 +50,3 @@ grafana-data/
 *.tmp
 *.bak
 /tmp/
-workspace/sunspot/
-journal.md

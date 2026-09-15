@@ -1,497 +1,317 @@
 <!-- Markdownlint-disable MD013 -->
+# zk-pool
 
-# private-transrer
+> Private SOL transfers on Solana using Groth16 zero-knowledge proofs.
 
-Confidential SOL transfers using Noir ZK (Zero-Knowledge Schemes) and Groth16 on-chain validation via Sunspot.
+[![CI](https://github.com/kwebhub/private-transfer/actions/workflows/ci.yml/badge.svg)](https://github.com/kwebhub/private-transfer/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Solana](https://img.shields.io/badge/Solana-Devnet-9945FF?logo=solana)](https://solana.com)
+[![Noir](https://img.shields.io/badge/Noir-1.0.0--rc.1-blue)](https://noir-lang.org)
 
-## frontend
+**zk-pool** — приватный пул для переводов SOL. Пользователь вносит SOL в общий vault,
+получает *deposit note* (два секрета), и позже может вывести SOL на **любой** адрес,
+не раскрывая связь между депозитом и выводом.
 
-действия с кашельком в проекте обозначены кнопкой и состоят из
+Проект реализует полный стек ZK-протокола:
 
-- компонент WalletConnect.vue
-- компосабл useWallet.ts
-- стор wallet.ts
+- **Noir** — ZK-circuit с Poseidon2 и Merkle proof.
+- **Sunspot** — Noir → Groth16 proof для Solana.
+- **Anchor** — Solana program с on-chain верификатором.
+- **Rust + axum** — backend с индексером и Merkle tree в Redis.
+- **Vue 3 + Vite** — frontend с witness generation на клиенте.
+- **Postgres + Redis** — хранение и кеш.
+- **Prometheus + Grafana** — мониторинг.
 
-компонент WalletConnect.vue выводится на странице Home.vue, форматирует вывод адреса и баланса, определяет надписи на кнопке исходя из состояния и функции при клике на кнопку
-
-компосабл useWallet.ts создаёт объект подключения к сети solana (клиента), в функции connect() находит кошелёк (расширение браузера), определяет и сохраняет в сторе адрес кошелька, обновляет в сторе баланс по адресу кошелька, вешает слушатель на изменение адреса кошелька, чтобы обновить стор или отключиться функцией стора и функцией кошелька. Обновляет адрес и баланс в сторе при обновлении страницы через onMount
-
-стор wallet.ts определяет поля состояния и функци по изменению значений этих полей.
-
-### Pool
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        ПРОГРАММА (SOLANA)                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
-│  │   POOL PDA   │  │  NULLIFIER   │  │     VAULT PDA        │ │
-│  │              │  │    SET PDA   │  │                      │ │
-│  │ • authority  │  │ • pool ref   │  │   (хранит SOL)       │ │
-│  │ • nextLeaf   │  │ • nullifiers │  │                      │ │
-│  │ • totalDep   │  │   [hash...]  │  │                      │ │
-│  │ • roots[10]  │  └──────────────┘  └──────────────────────┘ │
-│  └──────────────┘                                             │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-Три основных аккаунта пула:
-
-Pool Account (`poolAcc.ts`) хранит основное состояние Merkle Tree, размер: 384 байта (фиксированный)
-
-```typescript
-{
-  authority: Address,          // Владелец пула (кто инициализировал)
-  nextLeafIndex: bigint,       // Следующий индекс для вставки (0, 1, 2...)
-  totalDeposits: bigint,       // Общая сумма всех депозитов
-  currentRootIndex: bigint,    // Индекс текущего корня (0-9)
-  roots: Array<Uint8Array>     // История из 10 последних корней
-}
-```
-
-Nullifier Set Account (`nullifierSetAcc.ts`), хранит использованные nullifier'ы для защиты от двойных трат:
-При выводе (withdraw) проверяется, что `nullifierHash` отсутствует в этом списке.
-
-```typescript
-{
-  pool: Address,               // Ссылка на пул
-  nullifiers: Array<Uint8Array> // Массив хешей использованных депозитов
-}
-```
-
-Vault Account (`poolVaultPda`), простой аккаунт, который хранит SOL-токены всех депозитов. Никакой структуры данных, просто баланс.
-
-Инициализация (`pool.ts` + `init-pool.ts`)
-
-```typescript
-// Инструкция создает 3 аккаунта:
-getPoolInstructionAsync({
-  authority: signer  // Кто будет владельцем пула
-})
-
-// Создаются:
-// 1. Pool PDA (seed = "pool")
-// 2. Nullifier Set PDA (seed = "nullifier" + pool)
-// 3. Vault PDA (seed = "vault" + pool)
-```
-
-**После инициализации:**
-
-- `nextLeafIndex = 0`
-- `totalDeposits = 0`
-- `roots = [32 нулевых байта, ...]`
-- `nullifiers = []`
-
-### Deposit
-
-Депозит (`deposit.ts` + `useDeposit.ts`)
-
-```typescript
-// 1. Генерация секретов
-const { nullifierSecret, secret } = generateSecrets();
-
-// 2. Вычисление commitment = hash(nullifierSecret + secret + amount)
-const commitment = computeCommitment(nullifierSecret, secret, amount);
-
-// 3. Вычисление nullifierHash = hash(nullifierSecret)
-const nullifierHash = computeNullifierHash(nullifierSecret);
-
-// 4. Расчет нового корня (с учетом пустых листьев)
-const targetNewRoot = calculateNextMerkleRoot(nextLeafIndex, commitment);
-
-// 5. Отправка транзакции с инструкцией deposit
-//    - Добавляет commitment как новый лист в Merkle Tree
-//    - Переводит SOL в vault
-//    - Обновляет nextLeafIndex, totalDeposits, roots
-```
-
-**Расчет корня:**
-
-```
-Уровень 0: [leaf0] [leaf1] [leaf2] [leaf3] ... (листья - commitment'ы)
-Уровень 1: [hash(leaf0+leaf1)] [hash(leaf2+leaf3)] ...
-Уровень 2: [hash(hash0+hash1)] [hash(hash2+hash3)] ...
-...
-Уровень 20: [ROOT] (один корень)
-```
-
-**Пустые листья:** Всегда `32 нулевых байта`.
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                   FRONTEND (Vue 3)                      │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│  DepositForm.vue                                       │
-│       ↓                                                 │
-│  usePool.ts ─────────► fetchPoolInfo()                 │
-│       ↓                     ↓                           │
-│  useDeposit.ts ─────────► deposit()                    │
-│       ↓                     ↓                           │
-│  crypto.ts ──────────────► generateSecrets()           │
-│       ↓                     ↓                           │
-│  deposits.ts (store) ───► addNote()                   │
-│                                                          │
-└──────────────────────────────────────────────────────────┘
-                         ↓
-┌──────────────────────────────────────────────────────────┐
-│              @solana/kit (RPC клиент)                   │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│  getProgramAccounts ───► поиск аккаунтов               │
-│  fetchPoolAcc ─────────► чтение PoolAcc                │
-│  sendTransaction ──────► отправка транзакций          │
-│                                                          │
-└──────────────────────────────────────────────────────────┘
-                         ↓
-┌──────────────────────────────────────────────────────────┐
-│              SOLANA DEVNET                              │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│  Program: FbXJSZ171dcnHJVrd5E6KwvXAx7bMgxC44McF4vJ6cK │
-│                                                          │
-└──────────────────────────────────────────────────────────┘
-```
-
-Безопасность и проверки
-
-| Что проверяется | Где | Как |
-| ---------------- | ----- | ----- |
-| Минимальный депозит | `useDeposit.ts` | `amountSol < MIN_DEPOSIT` |
-| Подпись депозитора | Программа | Проверка подписи транзакции |
-| Корректность корня | Программа | `newRoot` должен совпадать с вычисленным |
-| Двойная трата | Программа | Проверка `nullifierHash` в Nullifier Set |
-| Переполнение дерева | Программа | `nextLeafIndex < 2^20` |
-| Баланс Vault | Программа | При выводе проверяется достаточность |
-
-1. **Подключи кошелек** (Phantom/Solflare)
-2. **Если пул не создан** → нажми "Initialize Pool"
-3. **После создания** → введи сумму и нажми "Deposit"
-4. **Сохрани Deposit Note** (она понадобится для вывода)
-
-Nullifier Secret: 966d7f21ff0d2adb3c998bc83ae98c53c7d56f3008517d616a2a3b95ad5eb334
-Secret: e86d6e32ba27150176c58b8151eae0baf33049f0fc1317321326464ddd8e94ca
-Amount: 0.01 SOL
-Commitment: 2b90f2a34b8b39784aa4931927c43cb92ba88925cb08829317692002424aadfe
-
-### withdraw
-
-- Пользователь предоставляет `nullifierSecret` и `secret`
-- Генерируется ZK-доказательство
-- Проверяется `nullifierHash` в Nullifier Set
-- Средства выводятся из Vault
-- `nullifierHash` добавляется в Nullifier Set
-
-# 📊 Полный анализ процесса снятия депозита (Withdraw)
-
-Я проанализировал все файлы. Вот как работает withdraw от начала до конца.
+> ⚠️ **Статус:** devnet, portfolio project. Не использовать в mainnet без аудита.
 
 ---
 
-## 🏗️ Общая схема
+## Содержание
+
+- [Как это работает](#как-это-работает)
+- [Архитектура](#архитектура)
+- [Быстрый старт](#быстрый-старт)
+- [Структура репозитория](#структура-репозитория)
+- [Технологии](#технологии)
+- [Команды](#команды)
+- [Мониторинг](#мониторинг)
+- [Безопасность](#безопасность)
+- [Документация](#документация)
+- [Лицензия](#лицензия)
+
+---
+
+## Как это работает
+
+### Депозит
+
+1. Frontend генерирует два секрета: `nullifierSecret`, `secret`.
+2. Вычисляет `commitment = Poseidon2(nullifierSecret, secret, amount)`.
+3. Запрашивает актуальный Merkle root у backend.
+4. Отправляет `deposit` tx в программу: SOL уходит в vault, commitment становится листом дерева.
+5. Сохраняет *deposit note* (секреты + commitment) в localStorage.
+
+### Вывод
+
+1. Frontend парсит note, запрашивает Merkle proof у backend.
+2. Генерирует ZK-witness (noir_js) — доказательство, что он знает секреты,
+   соответствующие листу в дереве, **не раскрывая** их.
+3. Backend проксирует witness в prover (Sunspot), получает Groth16 proof.
+4. Frontend отправляет `withdraw` tx: программа верифицирует proof on-chain
+   через verifier program и переводит SOL из vault.
+5. `NullifierRecord` PDA создаётся — повторный вывод с тем же nullifier невозможен.
+
+**Что видит блокчейн:** commitment, nullifier_hash, root, amount.
+**Что скрыто:** связь между депозитом и выводом.
+
+Подробнее — [`docs/zk-explained.md`](docs/zk-explained.md).
+
+---
+
+## Архитектура
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│ 1. FRONTEND (useWithdraw.ts)                                        │
-│    • Юзер вводит Deposit Note + recipient + amount                  │
-│    • Вычисляет nullifierHash локально                               │
-│    • Проверяет, что нота не использована                            │
-│    • Отправляет запрос на бэкенд: POST /api/withdraw                │
-└──────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌──────────────────────────────────────────────────────────────────────┐
-│ 2. BACKEND (main.rs + merkle_tree.rs)                               │
-│    • Получает: nullifierSecret, secret, amount, recipient            │
-│    • Строит Merkle proof для commitment                             │
-│    • Генерирует ZK-доказательство (Gnark, 324 байта)               │
-│    • Возвращает: proof, nullifierHash, root                         │
-└──────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌──────────────────────────────────────────────────────────────────────┐
-│ 3. FRONTEND                                                          │
-│    • Создает withdrawInstruction через Codama                       │
-│    • Отправляет транзакцию через Wallet Standard                    │
-└──────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌──────────────────────────────────────────────────────────────────────┐
-│ 4. SOLANA PROGRAM (withdraw.rs)                                     │
-│    • Проверяет root в истории пула                                  │
-│    • Проверяет nullifier не использован                             │
-│    • Вызывает verifier program (CPI) с ZK-proof                     │
-│    • Добавляет nullifier в set                                      │
-│    • Переводит SOL из vault → recipient                             │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Frontend (Vue 3)                                           │
+│  Deposit: commitment + tx                                   │
+│  Withdraw: proof request + witness + tx                     │
+└─────────────────────────────────────────────────────────────┘
+              ↓ HTTP                    ↑ HTTP
+┌─────────────────────────────────────────────────────────────┐
+│  Backend (Rust + axum)                                      │
+│  /api/commitments  /api/root  /api/proof  /api/withdraw     │
+│  Indexer: слушает события → Postgres → Merkle tree          │
+│  Rate limiting · Prometheus metrics                         │
+└─────────────────────────────────────────────────────────────┘
+       ↓                ↓                ↓
+┌────────────┐   ┌────────────┐   ┌──────────────────┐
+│ PostgreSQL │   │   Redis    │   │  Merkle (Node.js)│
+│ commitments│   │ cache/tree │   │  Noir Poseidon2  │
+│ nullifiers │   │ rate limit │   │  /hash /root     │
+│ roots      │   │            │   │  /proof          │
+└────────────┘   └────────────┘   └──────────────────┘
+                                            ↑
+┌───────────────────────────────────────────┴─────────────────┐
+│  Solana (Anchor program `ptrans`)                           │
+│  Pool PDA · Vault PDA · NullifierRecord PDA                 │
+│  On-chain Groth16 verifier (Sunspot)                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Подробнее — [`docs/architecture.md`](docs/architecture.md).
+
+---
+
+## Быстрый старт
+
+### Требования
+
+- Linux (Debian 12+ / Ubuntu 22.04+)
+- Docker + Docker Compose
+- Rust 1.89+ ([rustup](https://rustup.rs))
+- Node.js 22+ ([nvm](https://github.com/nvm-sh/nvm))
+- pnpm (`npm install -g pnpm`)
+- tmux (`sudo apt install tmux`)
+- Anchor (`cargo install --git https://github.com/coral-xyz/anchor avm && avm install 0.30.1 && avm use 0.30.1`)
+- Solana CLI (`sh -c "$(curl -sSfL https://release.solana.com/stable/install)"`)
+- Noir (`curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash && noirup`)
+
+### Установка
+
+```bash
+git clone https://github.com/kwebhub/private-transfer.git
+cd private-transfer
+
+# 1. Запустить Docker-окружение (solana-dev, postgres, redis, prometheus, grafana)
+docker compose up -d
+
+# 2. Собрать и задеплоить программу на devnet
+cd workspace/ptrans
+anchor build
+anchor deploy --provider.cluster devnet
+cd ../..
+
+# 3. Скопировать .env.example → .env (в нужные места)
+cp .env.example workspace/ptrans/.env
+cp workspace/ptrans/.env workspace/ptrans/app/frontend/.env
+# отредактировать значения под свой кошелёк
+
+# 4. Применить миграции БД
+docker compose exec -T postgres psql -U ptrans -d ptrans < workspace/ptrans/app/backend/migrations/001_init.sql
+
+# 5. Установить зависимости frontend и merkle
+cd workspace/ptrans/app/frontend && pnpm install && cd -
+cd workspace/ptrans/app/merkle && pnpm install && cd -
+
+# 6. Запустить все сервисы одной командой
+./start-all.sh
+```
+
+После запуска:
+
+- Frontend: <http://localhost:5173>
+- Backend API: <http://localhost:4001>
+- Merkle: <http://localhost:4003>
+- Prometheus: <http://localhost:9090>
+- Grafana: <http://localhost:3000> (admin / admin)
+
+### Остановка
+
+```bash
+./start-all.sh stop
+docker compose down
 ```
 
 ---
 
-## 🔐 Шаг 1: Что доказывает ZK-схема (Noir)
+## Структура репозитория
 
-Файл `app/circuits/withdrawal/src/main.nr`:
-
-### Публичные входы (видны всем)
-
-```noir
-root: pub Field             // корень Merkle Tree
-nullifier_hash: pub Field   // хеш нуллифаера
-recipient: pub Field        // получатель
-amount: pub Field           // сумма
+```
+private-transfer/
+├── programs/ptrans/          ← Solana program (Anchor)
+├── workspace/ptrans/
+│   ├── app/backend/          ← Rust API (axum + Postgres + Redis + indexer)
+│   ├── app/prover/           ← Rust + Sunspot CLI wrapper
+│   ├── app/merkle/           ← Node.js + noir_js (Poseidon2)
+│   ├── app/circuits/         ← Noir circuits (withdrawal, hash2, hashes)
+│   └── app/frontend/         ← Vue 3 + Vite
+├── docs/                     ← architecture, threat-model, zk-explained, deployment
+├── grafana/                  ← dashboards + datasources provisioning
+├── docker-compose.yml
+├── Dockerfile                ← solana-dev image
+├── prometheus.yml
+├── start-all.sh
+└── PROJECT_CONTEXT.md        ← контекст для AI-ассистента
 ```
 
-### Приватные входы (только у пользователя)
-
-```noir
-nullifier: Field            // секрет из ноты
-secret: Field               // секрет из ноты
-merkle_proof: [Field; 20]   // путь в дереве
-is_even: [bool; 20]         // с какой стороны sibling
-```
-
-### Что доказывается
-
-```noir
-1. commitment = hash_3([nullifier, secret, amount])   // воссоздаем leaf
-2. computed_nullifier_hash = hash_1([nullifier])      // проверяем nullifier
-3. assert(computed_nullifier_hash == nullifier_hash)  // совпадает с публичным?
-4. computed_root = compute_merkle_root(commitment, merkle_proof, is_even)
-5. assert(computed_root == root)                      // leaf действительно в дереве
-```
-
-**Смысл:** пользователь доказывает *"я знаю секреты, которые дают commitment, лежащий в дереве с корнем `root`, и мой nullifierHash совпадает"* — **не раскрывая** `nullifier`, `secret` и путь в дереве.
+Полная структура — в [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md#4-структура-репозитория).
 
 ---
 
-## 🧮 Шаг 2: Бэкенд генерирует proof (`main.rs` + `merkle_tree.rs`)
+## Технологии
 
-### Что делает бэкенд
-
-1. **Получает от фронта:**
-
-   ```json
-   {
-     "nullifierSecret": "0x...",
-     "secret": "0x...",
-     "amount": 1000000000,
-     "recipient": "7xKX..."
-   }
-   ```
-
-2. **Строит Merkle proof** через `merkle_tree.rs`:
-   - Находит `commitment = hash_3(nullifier, secret, amount)`
-   - Находит индекс листа в дереве
-   - Собирает путь из 20 sibling-хешей + флаги `is_even`
-
-3. **Генерирует ZK-proof** (через Gnark, скорее всего Go-сервис рядом, хотя в коде это не видно). В `main.rs` эндпоинта `/api/withdraw` **вообще нет** — только `/api/deposit`, `/api/proof`, `/api/root`, `/api/health`.
-
-   ⚠️ **Важное расхождение:** `useWithdraw.ts` вызывает `POST /api/withdraw`, а в `main.rs` такого роута **нет**. Значит:
-   - Либо бэкенд не дописан,
-   - Либо это отдельный сервис (например, Go-сервер для генерации proof),
-   - Либо эндпоинт планируется добавить.
-
-4. **Возвращает:**
-
-   ```json
-   {
-     "proof": "base64...",     // ZK-доказательство (324 байта)
-     "nullifierHash": "0x...",
-     "root": "0x..."
-   }
-   ```
-
-### Формат proof (Gnark)
-
-- 324 байта = 4 × 32 (public inputs) + ~192 (G1/G2 точки BN254) + заголовки
-- Кодируется в base64 для передачи по HTTP
+| Слой | Технология |
+| ------ | ----------- |
+| Smart contract | Anchor (Rust) |
+| ZK circuit | Noir |
+| ZK proof | Sunspot → Groth16 (BN254) |
+| On-chain verifier | gnark-solana |
+| Backend | Rust + axum |
+| DB | PostgreSQL 16 |
+| Cache | Redis 7 |
+| Frontend | Vue 3 + Vite + Pinia |
+| Contracts client | Codama (autogen) |
+| Monitoring | Prometheus + Grafana |
+| Container | Docker + Docker Compose |
 
 ---
 
-## 🖥️ Шаг 3: Фронт вызывает withdraw (`useWithdraw.ts`)
+## Команды
 
-### Пошагово
+```bash
+# Все сервисы
+./start-all.sh                     # запустить (tmux + docker)
+./start-all.sh status              # статус
+./start-all.sh stop                # остановить
+./start-all.sh attach backend      # подключиться к tmux-сессии
+./start-all.sh logs backend        # tail лога
 
-```typescript
-1. Проверяет, что кошелек подключен
-2. amountLamports = amountSol * 1e9
+# Программа
+cd workspace/ptrans
+anchor build                       # собрать
+anchor deploy --provider.cluster devnet  # задеплоить
+anchor test                        # запустить тесты
 
-3. Вычисляет nullifierHash = hash(nullifierSecret)
-   nullifierHashHex = bytesToHex(nullifierHash)
+# Backend
+cd workspace/ptrans/app/backend
+cargo build                        # debug
+cargo build --release              # release
+cargo test                         # тесты
+cargo clippy                       # линтер
+cargo fmt                          # форматирование
 
-4. Ищет ноту в localStorage по nullifierHashHex
-   if (!note) throw "Deposit note not found"
-   if (note.used) throw "Already withdrawn"
+# Frontend
+cd workspace/ptrans/app/frontend
+npm run dev                        # dev-сервер
+npm run build                      # production build
+npm run test:unit                  # unit-тесты (vitest)
+npm run test:e2e                   # e2e (Playwright)
+npm run lint                       # eslint + oxlint
+npm run codama                     # регенерация клиентов из IDL
 
-5. Отправляет на бэкенд:
-   await apiWithdraw({ nullifierSecret, secret, amount, recipient })
-   → получает { proof, nullifierHash, root }
-
-6. Находит PDA:
-   - poolPda = findPoolPda()
-   - vaultPda = findPoolVaultPda({ pool: poolPda })
-   - nullifierSetPda = findNullifierSetPda({ pool: poolPda })
-
-7. Декодирует proof из base64 в Uint8Array
-
-8. Создает инструкцию через Codama:
-   getWithdrawInstructionAsync({
-     pool, nullifierSet, poolVault,
-     recipient,               // ← здесь recipient
-     verifierProgram,         // ← из .env
-     proof, nullifierHash, root,
-     to: recipientPubkey,     // ← дубль recipient (см. ниже)
-     amount
-   })
-
-9. Подписывает через Wallet Standard
-   const [signedTx] = await signProperty.signTransaction([transactionMessage])
-
-10. Отправляет через RPC
-
-11. Помечает ноту как used:
-    depositsStore.markUsed(nullifierHash)
-
-12. Обновляет баланс
+# Merkle
+cd workspace/ptrans/app/merkle
+npm start                          # запустить сервис
+npm test                           # тесты
 ```
 
 ---
 
-## ⛓️ Шаг 4: Solana-программа (`withdraw.rs`)
+## Мониторинг
 
-### Accounts
+После `./start-all.sh`:
 
-| Аккаунт | Seeds | Роль |
-| --------- | ------- | ------ |
-| `pool` | `["pool"]` | PoolAcc — хранит roots |
-| `nullifier_set` | `["nullifier", pool]` | Список использованных nullifier'ов |
-| `pool_vault` | `["vault", pool]` | Хранит SOL |
-| `recipient` | — | Кто получит SOL |
-| `verifier_program` | — | ZK-верификатор (CPI) |
-| `system_program` | — | Для transfer |
+- **Prometheus** (<http://localhost:9090>) — собирает метрики с `/metrics` backend'а каждые 15 сек.
+- **Grafana** (<http://localhost:3000>) — дашборд `ptrans Overview` с 9 панелями:
+  - HTTP Requests per Second (по endpoint и статусу)
+  - HTTP Latency (p50 / p95)
+  - Total Deposits / Withdrawals
+  - Merkle Tree Size
+  - Indexer Lag (сек от блокчейна)
+  - Merkle add_leaf Duration
+  - Errors per Second
+  - Internal Operations Duration
 
-### Логика `handler_withdraw`
+**Метрики:**
 
-```rust
-1. require!(recipient.key() == to)                    // сверка адреса
-2. require!(pool_vault.lamports() >= amount)          // хватает ли денег
-3. require!(pool.is_known_root(&root))                // корень в истории?
-4. require!(!nullifier_set.contains(&nullifier_hash)) // не использован?
-
-5. public_inputs = encode_public_inputs(root, nullifier_hash, to, amount)
-   // 12-байтный Gnark-заголовок + 4 × 32 байта
-
-6. invoke(verifier_program, [proof || public_inputs])
-   // CPI к верификатору: если proof неверный → InvalidProof
-
-7. nullifier_set.add(nullifier_hash)                  // помечаем использованным
-
-8. system_program::transfer(vault → recipient, amount)
-   // подпись через PDA seeds ["vault", pool, bump]
-
-9. emit!(WithdrawEvent { nullifier_hash, recipient, timestamp })
-```
+| Метрика | Что показывает |
+| --------- | --------------- |
+| `axum_http_requests_total` | HTTP-запросы |
+| `axum_http_requests_duration_seconds` | Латентность HTTP |
+| `ptrans_indexer_deposits_total` | Обработано DepositEvent |
+| `ptrans_indexer_withdrawals_total` | Обработано WithdrawEvent |
+| `ptrans_indexer_lag_seconds` | Лаг от блокчейна |
+| `ptrans_indexer_tick_duration_seconds` | Время одного тика индексера |
+| `ptrans_indexer_tree_size` | Размер дерева |
+| `ptrans_tree_add_leaf_duration_seconds` | Время добавления листа |
+| `ptrans_tree_hash_duration_seconds` | Время Poseidon2 hash |
+| `ptrans_tree_errors_total` | Ошибки дерева |
+| `ptrans_db_errors_total` | Ошибки БД |
 
 ---
 
-## 🔗 Как связаны компоненты
+## Безопасность
 
-```
-Noir circuit (main.nr)
-    ↓ компилируется в
-Verifier Program (VERIFIER_PROGRAM_ID = Eewognja...)
-    ↓ вызывается через
-ptrans::withdraw (withdraw.rs)
-    ↑ инструкция создается
-Codama-generated withdraw.ts
-    ↑ импортируется
-useWithdraw.ts
-    ↑ отправляет запрос
-Backend /api/withdraw (не реализован в main.rs!)
-    ↑ запрос от
-WithdrawForm.vue
-```
+- **Threat model:** [`docs/threat-model.md`](docs/threat-model.md) (TODO)
+- **Report vulnerabilities:** [`SECURITY.md`](SECURITY.md)
 
----
+**Ключевые инварианты:**
 
-## ⚠️ Проблемы, которые я вижу
+1. Каждый `nullifier_hash` используется **ровно один раз** — гарантируется
+   `init` для `NullifierRecord` PDA (`AccountAlreadyInUse` при повторе).
+2. `root` должен быть в истории `PoolAcc.roots[10]` — защита от proof для устаревшего дерева.
+3. ZK-proof верифицируется **on-chain** через verifier program — backend не может подделать.
+4. `recipient` из tx сверяется с `to` из instruction — proof привязан к получателю.
 
-### 1. Бэкенд не реализует `/api/withdraw`
+**Известные ограничения:**
 
-В `main.rs` есть `/api/deposit`, `/api/proof`, `/api/root`, `/api/health` — но **нет** `/api/withdraw`. Фронт его вызывает, значит:
-
-- Либо бэкенд не дописан,
-- Либо proof генерируется в другом сервисе (Go/Gnark),
-- Либо эндпоинт нужно добавить.
-
-### 2. Дублирование `recipient` и `to`
-
-В `getWithdrawInstructionAsync` передаются **и** `recipient`, **и** `to`. Судя по IDL, в data инструкции есть поле `to: Address`, а в accounts — `recipient`. Оба нужны, потому что программа сверяет их:
-
-```rust
-require!(ctx.accounts.recipient.key() == to, PtransError::RecipientMismatch);
-```
-
-### 3. `merkle_tree.rs` перестраивает все дерево при каждом добавлении
-
-```rust
-async fn rebuild_tree(&mut self) -> Result<...> {
-    let mut leaves = vec![[0u8; 32]; 1 << TREE_DEPTH]; // 1M листьев!
-    // ...
-}
-```
-
-Это **O(2^20)** на каждый депозит — очень медленно и не масштабируется. Плюс нет персистентности — при рестарте бэкенда все данные теряются (в `main.rs` видно `Pool::new()`, который создает пустой пул).
-
-### 4. `pool.is_known_root()` использует линейный поиск
-
-```rust
-self.roots.iter().any(|r| r == root)
-```
-
-10 элементов — не критично, но всё же.
-
-### 5. NullifierSet хранит все nullifier'ы в одном аккаунте
-
-```rust
-pub nullifiers: Vec<[u8; 32]>,  // max 1024
-```
-
-- Ограничение **1024 nullifier'а** → после 1024 выводов пул перестанет работать.
-- Аккаунт растет, дорожает.
-
-### 6. `nullifier_hash` считается **дважды**
-
-- Фронт: `computeNullifierHash(nullifierSecret)` — SHA-256
-- Программа: verifier проверяет `hash_1([nullifier])` через Poseidon
-
-⚠️ **Это разные хеши!** Фронт использует SHA-256, а схема Noir — Poseidon. Значит, `nullifierHash`, отправленный в программу, **не совпадет** с тем, что проверяет ZK-верификатор.
-
-Скорее всего, это баг: либо фронт должен использовать Poseidon-хеш, либо бэкенд должен возвращать правильный `nullifierHash`. В `useWithdraw.ts` `nullifierHash` берется **из ответа бэкенда** для отправки в транзакцию, а локальный SHA-256 используется только для поиска ноты. Это может быть намеренно, но выглядит хрупко.
-
-### 7. `encode_public_inputs` в Rust vs Noir
-
-- Rust: `amount` упакован в 32 байта (big-endian, справа)
-- Noir: `amount: pub Field`
-
-Нужно убедиться, что Gnark-верификатор ожидает именно такой формат (12-байтный заголовок + 4 × 32).
+- Groth16 setup — без trusted ceremony.
+- NullifierRecord не удаляется (rent не возвращается).
+- Backend видит commitments/nullifiers (но не связь между ними).
 
 ---
 
-## 🎯 Что дальше?
+## Документация
 
-Мы разобрали withdraw. Теперь, как ты сказал, переходим к **PostgreSQL + Redis** для бэкенда.
+- [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) — полный контекст проекта для AI-ассистента.
+- [`docs/architecture.md`](docs/architecture.md) — детальная архитектура.
+- [`docs/zk-explained.md`](docs/zk-explained.md) — как работает ZK-часть.
+- [`docs/threat-model.md`](docs/threat-model.md) — модель угроз.
+- [`docs/deployment.md`](docs/deployment.md) — как деплоить.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — как контрибьютить.
 
-Судя по текущему состоянию:
+---
 
-- `db.rs` уже есть в проекте, но я его не видел.
-- `config.rs` тоже не видел.
+## Лицензия
 
-**Что мне нужно от тебя, чтобы начать работу с БД:**
-
-1. `app/backend/src/db.rs` — текущая реализация (если есть)
-2. `app/backend/src/config.rs` — конфиг
-3. `app/backend/Cargo.toml` — зависимости (есть ли `sqlx`, `redis`, `deadpool` и т.д.)
-4. Есть ли уже docker-compose / миграции?
-5. Что именно нужно хранить в PostgreSQL, а что в Redis?
-
-Скидывай — и поехали дальше.
+MIT — см. [`LICENSE`](LICENSE).
