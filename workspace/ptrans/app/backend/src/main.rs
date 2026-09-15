@@ -164,12 +164,10 @@ async fn handle_root(
     State(state): State<AppState>,
     Query(query): Query<CommitmentsQuery>,
 ) -> Result<Json<RootResponse>, (StatusCode, String)> {
-    // 1. Пробуем из дерева в Redis
     if let Ok(Some(root)) = state.cache.get_tree_root(&query.pool_address).await {
         return Ok(Json(RootResponse { root }));
     }
 
-    // 2. Fallback: из БД
     let root = state
         .db
         .get_latest_root(&query.pool_address)
@@ -193,10 +191,8 @@ async fn handle_proof(
     State(state): State<AppState>,
     Query(query): Query<ProofQuery>,
 ) -> Result<Json<ProofResponse>, (StatusCode, String)> {
-    // Берём proof из кеша дерева
     match tree::get_proof(&state.cache, &query.pool_address, query.leaf_index).await {
         Ok((proof, is_even, root)) => {
-            // Проверяем, что дерево не пустое (root не EMPTY_LEAF)
             if root == "0000000000000000000000000000000000000000000000000000000000000000" {
                 return Err((
                     StatusCode::NOT_FOUND,
@@ -244,12 +240,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let merkle_url =
         std::env::var("MERKLE_URL").unwrap_or_else(|_| "http://localhost:4003".to_string());
 
-    // Инициализируем пустое дерево (если ещё не инициализировано)
-    if cache_arc.get_tree_root(&pool_address).await?.is_none() {
+    // ============================================================
+    // Синхронизация дерева: если Redis пуст, инициализируем,
+    // потом догружаем commitments из БД
+    // ============================================================
+    let tree_size = cache_arc.get_tree_size(&pool_address).await?.unwrap_or(0);
+    let db_commitments = db_arc.get_commitments(&pool_address).await?;
+
+    if tree_size == 0 && cache_arc.get_tree_root(&pool_address).await?.is_none() {
         println!("🌳 Initializing empty tree in Redis...");
         tree::init_empty_tree(&cache_arc, &merkle_url, &pool_address)
             .await
             .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
+    }
+
+    // Синхронизируем дерево с БД
+    let current_size = cache_arc.get_tree_size(&pool_address).await?.unwrap_or(0);
+
+    if db_commitments.len() > current_size {
+        println!(
+            "🌳 Syncing tree: DB has {} commitments, Redis has {} — adding {} more",
+            db_commitments.len(),
+            current_size,
+            db_commitments.len() - current_size
+        );
+
+        for (leaf_index, commitment) in &db_commitments[current_size..] {
+            let commitment_hex = hex::encode(commitment);
+            tree::add_leaf(
+                &cache_arc,
+                &merkle_url,
+                &pool_address,
+                *leaf_index as usize,
+                &commitment_hex,
+            )
+            .await
+            .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
+        }
+
+        let final_root = cache_arc
+            .get_tree_root(&pool_address)
+            .await?
+            .unwrap_or_else(|| "unknown".to_string());
+        println!("🌳 Tree synced: root={}", final_root);
+    } else {
+        let root = cache_arc
+            .get_tree_root(&pool_address)
+            .await?
+            .unwrap_or_else(|| "unknown".to_string());
+        println!(
+            "🌳 Tree already in sync: {} leaves, root={}",
+            current_size, root
+        );
     }
 
     let state = AppState {
@@ -257,7 +299,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cache: cache_arc.clone(),
     };
 
-    // Запускаем индексер в фоне
     let indexer = indexer::Indexer::new(
         db_arc.clone(),
         cache_arc.clone(),
