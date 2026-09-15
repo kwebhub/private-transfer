@@ -2,6 +2,7 @@ mod cache;
 mod config;
 mod db;
 mod indexer;
+mod metrics;
 mod rate_limit;
 mod tree;
 
@@ -12,6 +13,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum_prometheus::PrometheusMetricLayer;
+use metrics_exporter_prometheus::PrometheusBuilder;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -75,7 +78,10 @@ struct ProofResponse {
 async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value> {
     let db_status = match sqlx::query("SELECT 1").execute(state.db.pool()).await {
         Ok(_) => "ok",
-        Err(_) => "error",
+        Err(_) => {
+            metrics::record_db_error();
+            "error"
+        }
     };
 
     Json(serde_json::json!({
@@ -140,6 +146,7 @@ async fn handle_commitments(
         .get_commitments(&query.pool_address)
         .await
         .map_err(|e| {
+            metrics::record_db_error();
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("DB error: {}", e),
@@ -176,6 +183,7 @@ async fn handle_root(
         .get_latest_root(&query.pool_address)
         .await
         .map_err(|e| {
+            metrics::record_db_error();
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("DB error: {}", e),
@@ -209,10 +217,13 @@ async fn handle_proof(
                 root,
             }))
         }
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Tree error: {}", e),
-        )),
+        Err(e) => {
+            metrics::record_tree_error();
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Tree error: {}", e),
+            ))
+        }
     }
 }
 
@@ -221,6 +232,15 @@ async fn handle_proof(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
+
+    // 1. Устанавливаем глобальный Prometheus recorder
+    //    install_recorder() делает metrics::counter!() доступным
+    let prometheus_handle = PrometheusBuilder::new()
+        .install_recorder()
+        .map_err(|e| format!("Failed to install Prometheus recorder: {}", e))?;
+
+    metrics::init_metrics();
+    println!("📊 Metrics initialized");
 
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgres://ptrans:ptrans_dev_password@localhost:5432/ptrans".to_string()
@@ -293,6 +313,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // Записываем начальный размер дерева
+    if current_size > 0 {
+        metrics::record_deposit(current_size as i64 - 1);
+        println!("📊 Recorded tree size: {}", current_size);
+    }
+
     let state = AppState {
         db: db_arc.clone(),
         cache: cache_arc.clone(),
@@ -308,6 +334,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         indexer.run().await;
     });
+
+    // 2. HTTP middleware для автоматических HTTP-метрик
+    let (prometheus_layer, _metric_handle) = PrometheusMetricLayer::pair();
 
     // Роуты с разными rate limit + cache в extensions
     let withdraw_routes = Router::new()
@@ -328,10 +357,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/health", get(handle_health))
         .with_state(state.clone());
 
+    // 3. /metrics — использует тот же recorder
+    let metrics_handle_clone = prometheus_handle.clone();
+    let metrics_route = Router::new().route(
+        "/metrics",
+        get(move || {
+            let handle = metrics_handle_clone.clone();
+            async move { handle.render() }
+        }),
+    );
+
     let app = Router::new()
         .merge(health_routes)
         .merge(withdraw_routes)
         .merge(read_routes)
+        .merge(metrics_route)
+        .layer(prometheus_layer)
         .layer(CorsLayer::permissive());
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "4001".to_string());
@@ -344,6 +385,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  GET  /api/root        - Get latest root (60 req/min)");
     println!("  GET  /api/proof       - Get Merkle proof (60 req/min)");
     println!("  GET  /api/health      - Health check (unlimited)");
+    println!("  GET  /metrics         - Prometheus metrics");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 

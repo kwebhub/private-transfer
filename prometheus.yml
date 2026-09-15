@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "ptrans"
+
+scrape_configs:
+  - job_name: "ptrans-backend"
+    static_configs:
+      # network_mode: host у solana-dev означает, что backend
+      # доступен на localhost:4001 внутри сети контейнера.
+      # Из контейнера prometheus localhost — это сам контейнер,
+      # поэтому используем host.docker.internal или IP хоста.
+      - targets: ["host.docker.internal:4001"]
+        labels:
+          service: "backend"
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

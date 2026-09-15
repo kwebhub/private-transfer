@@ -1,8 +1,9 @@
 use crate::cache::Cache;
 use crate::db::Db;
+use crate::metrics;
 use crate::tree;
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 
 const POLL_INTERVAL_SECS: u64 = 5;
 const PAGE_SIZE: usize = 100;
@@ -37,9 +38,12 @@ impl Indexer {
         println!("🔄 Indexer started for pool {}", self.pool_address);
 
         loop {
+            let start = Instant::now();
             if let Err(e) = self.tick().await {
                 eprintln!("⚠️ Indexer tick error: {}", e);
+                metrics::record_indexer_error();
             }
+            metrics::observe_indexer_tick(start.elapsed().as_secs_f64());
             sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
         }
     }
@@ -56,7 +60,6 @@ impl Indexer {
         let mut all_sigs: Vec<serde_json::Value> = Vec::new();
         let mut reached_last = false;
 
-        // Пагинация: собираем все новые подписи, пока не дойдём до last_processed
         for _page in 0..MAX_PAGES {
             let mut params = serde_json::json!([self.pool_address, { "limit": PAGE_SIZE }]);
             if let Some(b) = &before {
@@ -105,7 +108,6 @@ impl Indexer {
                 break;
             }
 
-            // Следующая страница — before = последняя сигнатура текущей страницы
             if let Some(last_sig) = page_sigs.last() {
                 before = last_sig["signature"].as_str().map(|s| s.to_string());
             } else {
@@ -113,11 +115,22 @@ impl Indexer {
             }
         }
 
+        // Считаем lag от самого нового блока
+        if let Some(first) = all_sigs.first() {
+            if let Some(block_time) = first["blockTime"].as_i64() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let lag = (now - block_time).max(0) as f64;
+                metrics::record_indexer_lag(lag);
+            }
+        }
+
         if all_sigs.is_empty() {
             return Ok(());
         }
 
-        // Разворачиваем — от старых к новым
         all_sigs.reverse();
 
         let mut newest_signature: Option<String> = None;
@@ -130,13 +143,13 @@ impl Indexer {
 
             if let Err(e) = self.process_transaction(&client, signature).await {
                 eprintln!("⚠️ Failed to process {}: {}", signature, e);
+                metrics::record_indexer_error();
                 continue;
             }
 
             newest_signature = Some(signature.to_string());
         }
 
-        // Запоминаем последнюю обработанную сигнатуру (самую новую)
         if let Some(newest) = newest_signature {
             let _ = self
                 .cache
@@ -200,7 +213,7 @@ impl Indexer {
                     Err(_) => continue,
                 };
 
-            // DepositEvent: 88 байт
+            // DepositEvent
             if bytes.len() == 88 {
                 let commitment = &bytes[8..40];
                 let leaf_index = i64::from_le_bytes(bytes[40..48].try_into().unwrap());
@@ -232,9 +245,11 @@ impl Indexer {
                                 "📥 Indexed deposit: leaf={} commitment={} → tree root: {}",
                                 leaf_index, commitment_hex, root
                             );
+                            metrics::record_deposit(leaf_index);
                         }
                         Err(e) => {
                             eprintln!("⚠️ Failed to add leaf to tree: {}", e);
+                            metrics::record_tree_error();
                         }
                     }
 
@@ -242,7 +257,7 @@ impl Indexer {
                 }
             }
 
-            // WithdrawEvent: 80 байт
+            // WithdrawEvent
             if bytes.len() == 80 {
                 let nullifier_hash = &bytes[8..40];
                 let recipient = &bytes[40..72];
@@ -262,6 +277,7 @@ impl Indexer {
                         "📤 Indexed withdraw: nullifier={}",
                         hex::encode(nullifier_hash)
                     );
+                    metrics::record_withdrawal();
                 }
             }
         }

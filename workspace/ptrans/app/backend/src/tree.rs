@@ -1,16 +1,18 @@
 use crate::cache::Cache;
+use crate::metrics;
 use std::sync::Arc;
+use std::time::Instant;
 
 const TREE_DEPTH: u32 = 20;
 const EMPTY_LEAF: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
-/// Вычисляет Poseidon2 hash двух 32-байтных hex-элементов через merkle-сервис
 async fn poseidon2_hash(
     client: &reqwest::Client,
     merkle_url: &str,
     left: &str,
     right: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let start = Instant::now();
     let url = format!("{}/hash", merkle_url);
     let resp = client
         .post(&url)
@@ -21,6 +23,7 @@ async fn poseidon2_hash(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        metrics::record_tree_error();
         return Err(format!("Merkle /hash error {}: {}", status, body).into());
     }
 
@@ -30,11 +33,11 @@ async fn poseidon2_hash(
         .ok_or("Missing 'hash' field in response")?
         .to_string();
 
+    metrics::observe_tree_hash(start.elapsed().as_secs_f64());
+
     Ok(hash)
 }
 
-/// Инициализирует пустое дерево в Redis.
-/// Сохраняет empty hash для каждого уровня в отдельные ключи.
 pub async fn init_empty_tree(
     cache: &Arc<Cache>,
     merkle_url: &str,
@@ -42,13 +45,11 @@ pub async fn init_empty_tree(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = reqwest::Client::new();
 
-    // Уровень 0: EMPTY_LEAF
     cache.set_empty_hash(pool_address, 0, EMPTY_LEAF).await?;
     cache
         .set_tree_level(pool_address, 0, &[EMPTY_LEAF.to_string()])
         .await?;
 
-    // Уровни 1..=TREE_DEPTH: hash от предыдущего empty hash
     let mut current = EMPTY_LEAF.to_string();
     for d in 1..=TREE_DEPTH {
         current = poseidon2_hash(&client, merkle_url, &current, &current).await?;
@@ -65,7 +66,6 @@ pub async fn init_empty_tree(
     Ok(())
 }
 
-/// Добавить новый лист в дерево и обновить путь до корня.
 pub async fn add_leaf(
     cache: &Arc<Cache>,
     merkle_url: &str,
@@ -73,9 +73,9 @@ pub async fn add_leaf(
     leaf_index: usize,
     commitment: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let start = Instant::now();
     let client = reqwest::Client::new();
 
-    // 1. Текущий размер дерева
     let size = cache.get_tree_size(pool_address).await?.unwrap_or(0);
 
     if leaf_index != size {
@@ -85,7 +85,6 @@ pub async fn add_leaf(
             .unwrap_or_else(|| EMPTY_LEAF.to_string()));
     }
 
-    // 2. Читаем уровень 0
     let mut level0 = cache
         .get_tree_level(pool_address, 0)
         .await?
@@ -98,14 +97,12 @@ pub async fn add_leaf(
 
     cache.set_tree_level(pool_address, 0, &level0).await?;
 
-    // 3. Обновляем путь
     let mut idx = leaf_index;
     let mut current_level = level0;
 
     for d in 0..TREE_DEPTH as usize {
         let sibling_idx = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
 
-        // Sibling: из массива уровня, либо empty hash для этого уровня
         let sibling = if sibling_idx < current_level.len() {
             current_level[sibling_idx].clone()
         } else {
@@ -153,11 +150,12 @@ pub async fn add_leaf(
     cache.set_tree_root(pool_address, &root).await?;
     cache.set_tree_size(pool_address, size + 1).await?;
 
+    metrics::observe_add_leaf(start.elapsed().as_secs_f64());
+
     println!("🌳 Added leaf {} → new root: {}", leaf_index, root);
     Ok(root)
 }
 
-/// Получить Merkle proof для указанного leaf_index
 pub async fn get_proof(
     cache: &Arc<Cache>,
     pool_address: &str,

@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: "ptrans"
+    orgId: 1
+    folder: "ptrans"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
