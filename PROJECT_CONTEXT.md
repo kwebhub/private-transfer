@@ -80,7 +80,7 @@
 | ------ | ----------- | -------- | ------- |
 | Smart contract | Anchor | 0.30+ | Solana program framework |
 | ZK circuit | Noir | 1.0.0-rc.1 | DSL для ZK-схем |
-| ZK backend | Sunspot | 1.0.0 | Noir → Groth16 для Solana |
+| ZK backend | Sunspot | 1.0.0 | Noir → Groth16 для Solana (Go-бинарь, ELF с `.gopclntab`) |
 | ZK verification | gnark-solana | — | On-chain verifier |
 | Backend | Rust | 1.89+ | Производительность, типобезопасность |
 | Backend framework | axum | 0.7 | HTTP API |
