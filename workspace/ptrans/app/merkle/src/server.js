@@ -22,14 +22,12 @@ async function poseidon2Hash(leftHex, rightHex) {
     left: leftHex.startsWith("0x") ? leftHex : "0x" + leftHex,
     right: rightHex.startsWith("0x") ? rightHex : "0x" + rightHex,
   });
-  // returnValue — hex-строка "0x..."
   const clean = returnValue.startsWith("0x") ? returnValue.slice(2) : returnValue;
   return clean.padStart(64, "0");
 }
 
 // ============================================================
 // Построение дерева из commitments
-// Возвращает { root, tree } где tree[0] — листья, tree[DEPTH] — корень
 // ============================================================
 async function buildTree(commitments) {
   const totalLeaves = 1 << TREE_DEPTH;
@@ -60,6 +58,18 @@ async function buildTree(commitments) {
 // ============================================================
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
+
+// POST /hash — Poseidon2 hash двух элементов
+app.post("/hash", async (request, reply) => {
+  const { left, right } = request.body;
+
+  if (typeof left !== "string" || typeof right !== "string") {
+    return reply.code(400).send({ error: "left and right must be hex strings" });
+  }
+
+  const hash = await poseidon2Hash(left, right);
+  return { hash };
+});
 
 // POST /root — корень по списку commitments
 app.post("/root", async (request, reply) => {

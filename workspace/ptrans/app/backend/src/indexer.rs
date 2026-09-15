@@ -1,5 +1,6 @@
 use crate::cache::Cache;
 use crate::db::Db;
+use crate::tree;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
@@ -10,15 +11,23 @@ pub struct Indexer {
     cache: Arc<Cache>,
     rpc_url: String,
     pool_address: String,
+    merkle_url: String,
 }
 
 impl Indexer {
-    pub fn new(db: Arc<Db>, cache: Arc<Cache>, rpc_url: String, pool_address: String) -> Self {
+    pub fn new(
+        db: Arc<Db>,
+        cache: Arc<Cache>,
+        rpc_url: String,
+        pool_address: String,
+        merkle_url: String,
+    ) -> Self {
         Self {
             db,
             cache,
             rpc_url,
             pool_address,
+            merkle_url,
         }
     }
 
@@ -33,7 +42,7 @@ impl Indexer {
         }
     }
 
-    async fn tick(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn tick(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let client = reqwest::Client::new();
 
         let sigs_resp: serde_json::Value = client
@@ -49,7 +58,9 @@ impl Indexer {
             .json()
             .await?;
 
-        let sigs = sigs_resp["result"].as_array().cloned().unwrap_or_default();
+        let mut sigs = sigs_resp["result"].as_array().cloned().unwrap_or_default();
+        // Разворачиваем — от старых к новым (blockchain возвращает от новых к старым)
+        sigs.reverse();
 
         for sig_entry in sigs {
             let signature = match sig_entry["signature"].as_str() {
@@ -69,7 +80,7 @@ impl Indexer {
         &self,
         client: &reqwest::Client,
         signature: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let tx_resp: serde_json::Value = client
             .post(&self.rpc_url)
             .json(&serde_json::json!({
@@ -108,11 +119,12 @@ impl Indexer {
                     Err(_) => continue,
                 };
 
-            // DepositEvent: discriminator(8) + commitment(32) + leaf_index(8) + timestamp(8) + new_root(32) = 88 байт
+            // DepositEvent: 88 байт
             if bytes.len() == 88 {
                 let commitment = &bytes[8..40];
                 let leaf_index = i64::from_le_bytes(bytes[40..48].try_into().unwrap());
                 let new_root = &bytes[56..88];
+                let commitment_hex = hex::encode(commitment);
 
                 if !self.db.commitment_exists(leaf_index).await? {
                     self.db
@@ -125,18 +137,33 @@ impl Indexer {
                         )
                         .await?;
 
-                    // Инвалидируем кеш
-                    let _ = self.cache.invalidate_pool(&self.pool_address).await;
+                    // Обновляем дерево в Redis
+                    match tree::add_leaf(
+                        &self.cache,
+                        &self.merkle_url,
+                        &self.pool_address,
+                        leaf_index as usize,
+                        &commitment_hex,
+                    )
+                    .await
+                    {
+                        Ok(root) => {
+                            println!(
+                                "📥 Indexed deposit: leaf={} commitment={} → tree root: {}",
+                                leaf_index, commitment_hex, root
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("⚠️ Failed to add leaf to tree: {}", e);
+                        }
+                    }
 
-                    println!(
-                        "📥 Indexed deposit: leaf={} commitment={}",
-                        leaf_index,
-                        hex::encode(commitment)
-                    );
+                    // Инвалидируем обычный кеш
+                    let _ = self.cache.invalidate_pool(&self.pool_address).await;
                 }
             }
 
-            // WithdrawEvent: discriminator(8) + nullifier_hash(32) + recipient(32) + timestamp(8) = 80 байт
+            // WithdrawEvent: 80 байт
             if bytes.len() == 80 {
                 let nullifier_hash = &bytes[8..40];
                 let recipient = &bytes[40..72];
