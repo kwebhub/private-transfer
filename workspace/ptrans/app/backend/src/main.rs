@@ -2,15 +2,18 @@ mod cache;
 mod config;
 mod db;
 mod indexer;
+mod rate_limit;
 mod tree;
 
 use axum::{
     extract::{Query, State},
     http::StatusCode,
+    middleware,
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
@@ -236,14 +239,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_url = std::env::var("SOLANA_RPC_URL")
         .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
     let pool_address = std::env::var("POOL_ADDRESS")
-        .unwrap_or_else(|_| "3ENojXMjs7H87eNfHMgSbbRf486rCwcAvk8sPszL9cWq".to_string());
+        .unwrap_or_else(|_| "TQYnBSBF3z3FxMHupvt3cbKYXqsorYY9gYb19rjCncN".to_string());
     let merkle_url =
         std::env::var("MERKLE_URL").unwrap_or_else(|_| "http://localhost:4003".to_string());
 
-    // ============================================================
-    // Синхронизация дерева: если Redis пуст, инициализируем,
-    // потом догружаем commitments из БД
-    // ============================================================
+    // Синхронизация дерева
     let tree_size = cache_arc.get_tree_size(&pool_address).await?.unwrap_or(0);
     let db_commitments = db_arc.get_commitments(&pool_address).await?;
 
@@ -254,7 +254,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
     }
 
-    // Синхронизируем дерево с БД
     let current_size = cache_arc.get_tree_size(&pool_address).await?.unwrap_or(0);
 
     if db_commitments.len() > current_size {
@@ -310,28 +309,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         indexer.run().await;
     });
 
-    let app = Router::new()
-        .route("/api/health", get(handle_health))
+    // Роуты с разными rate limit + cache в extensions
+    let withdraw_routes = Router::new()
         .route("/api/withdraw", post(handle_withdraw))
+        .layer(middleware::from_fn(rate_limit::rate_limit_withdraw))
+        .layer(axum::Extension(cache_arc.clone()))
+        .with_state(state.clone());
+
+    let read_routes = Router::new()
         .route("/api/commitments", get(handle_commitments))
         .route("/api/root", get(handle_root))
         .route("/api/proof", get(handle_proof))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+        .layer(middleware::from_fn(rate_limit::rate_limit_read))
+        .layer(axum::Extension(cache_arc.clone()))
+        .with_state(state.clone());
+
+    let health_routes = Router::new()
+        .route("/api/health", get(handle_health))
+        .with_state(state.clone());
+
+    let app = Router::new()
+        .merge(health_routes)
+        .merge(withdraw_routes)
+        .merge(read_routes)
+        .layer(CorsLayer::permissive());
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "4001".to_string());
     let addr = format!("0.0.0.0:{}", port);
 
     println!("🚀 Backend server running on http://{}", addr);
     println!("📡 Endpoints:");
-    println!("  POST /api/withdraw    - Proxy to prover service");
-    println!("  GET  /api/commitments - List all commitments (cached)");
-    println!("  GET  /api/root        - Get latest root (from Redis tree)");
-    println!("  GET  /api/proof       - Get Merkle proof (from Redis tree)");
-    println!("  GET  /api/health      - Health check");
+    println!("  POST /api/withdraw    - Proxy to prover service (5 req/min)");
+    println!("  GET  /api/commitments - List all commitments (60 req/min)");
+    println!("  GET  /api/root        - Get latest root (60 req/min)");
+    println!("  GET  /api/proof       - Get Merkle proof (60 req/min)");
+    println!("  GET  /api/health      - Health check (unlimited)");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

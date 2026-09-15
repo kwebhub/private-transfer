@@ -140,6 +140,7 @@ impl Cache {
 
         conn.del::<_, ()>(keys).await
     }
+
     /// Получить empty hash для уровня
     pub async fn get_empty_hash(
         &self,
@@ -178,5 +179,25 @@ impl Cache {
     ) -> Result<(), redis::RedisError> {
         let key = format!("indexer:{}:last_signature", pool_address);
         self.set(&key, signature).await
+    }
+
+    /// Инкрементировать счётчик запросов и получить текущее значение.
+    /// TTL устанавливается при первом запросе.
+    pub async fn incr_rate_limit(
+        &self,
+        key: &str,
+        ttl_secs: u64,
+    ) -> Result<u64, redis::RedisError> {
+        let mut conn = self.conn.clone();
+
+        // INCR возвращает новое значение
+        let count: u64 = conn.incr(key, 1u64).await?;
+
+        // Устанавливаем TTL только при первом запросе (count == 1)
+        if count == 1 {
+            conn.expire::<_, ()>(key, ttl_secs as i64).await?;
+        }
+
+        Ok(count)
     }
 }
