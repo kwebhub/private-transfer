@@ -26,6 +26,7 @@ import {
   SolanaError,
   transformEncoder,
   type AccountMeta,
+  type AccountSignerMeta,
   type Address,
   type Codec,
   type Decoder,
@@ -35,14 +36,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
+  type TransactionSigner,
   type WritableAccount,
+  type WritableSignerAccount,
 } from '@solana/kit'
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  getNonNullResolvedInstructionInput,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core'
-import { findNullifierSetPda, findPoolPda, findPoolVaultPda } from '../pdas'
+import { findNullifierRecordPda, findPoolPda, findPoolVaultPda } from '../pdas'
 import { PTRANS_PROGRAM_ADDRESS } from '../programs'
 
 export const WITHDRAW_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -56,9 +60,10 @@ export function getWithdrawDiscriminatorBytes(): ReadonlyUint8Array {
 export type WithdrawInstruction<
   TProgram extends string = typeof PTRANS_PROGRAM_ADDRESS,
   TAccountPool extends string | AccountMeta<string> = string,
-  TAccountNullifierSet extends string | AccountMeta<string> = string,
+  TAccountNullifierRecord extends string | AccountMeta<string> = string,
   TAccountPoolVault extends string | AccountMeta<string> = string,
   TAccountRecipient extends string | AccountMeta<string> = string,
+  TAccountPayer extends string | AccountMeta<string> = string,
   TAccountVerifierProgram extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -67,11 +72,14 @@ export type WithdrawInstruction<
   InstructionWithAccounts<
     [
       TAccountPool extends string ? WritableAccount<TAccountPool> : TAccountPool,
-      TAccountNullifierSet extends string
-        ? WritableAccount<TAccountNullifierSet>
-        : TAccountNullifierSet,
+      TAccountNullifierRecord extends string
+        ? WritableAccount<TAccountNullifierRecord>
+        : TAccountNullifierRecord,
       TAccountPoolVault extends string ? WritableAccount<TAccountPoolVault> : TAccountPoolVault,
       TAccountRecipient extends string ? WritableAccount<TAccountRecipient> : TAccountRecipient,
+      TAccountPayer extends string
+        ? WritableSignerAccount<TAccountPayer> & AccountSignerMeta<TAccountPayer>
+        : TAccountPayer,
       TAccountVerifierProgram extends string
         ? ReadonlyAccount<TAccountVerifierProgram>
         : TAccountVerifierProgram,
@@ -133,16 +141,20 @@ export function getWithdrawInstructionDataCodec(): Codec<
 
 export type WithdrawAsyncInput<
   TAccountPool extends string = string,
-  TAccountNullifierSet extends string = string,
+  TAccountNullifierRecord extends string = string,
   TAccountPoolVault extends string = string,
   TAccountRecipient extends string = string,
+  TAccountPayer extends string = string,
   TAccountVerifierProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   pool?: Address<TAccountPool>
-  nullifierSet?: Address<TAccountNullifierSet>
+  /** NullifierRecord PDA — создаётся при первом withdraw для этого nullifier_hash. */
+  nullifierRecord?: Address<TAccountNullifierRecord>
   poolVault?: Address<TAccountPoolVault>
   recipient: Address<TAccountRecipient>
+  /** Плательщик за создание NullifierRecord. Должен быть подписантом. */
+  payer: TransactionSigner<TAccountPayer>
   verifierProgram: Address<TAccountVerifierProgram>
   systemProgram?: Address<TAccountSystemProgram>
   proof: WithdrawInstructionDataArgs['proof']
@@ -154,18 +166,20 @@ export type WithdrawAsyncInput<
 
 export async function getWithdrawInstructionAsync<
   TAccountPool extends string,
-  TAccountNullifierSet extends string,
+  TAccountNullifierRecord extends string,
   TAccountPoolVault extends string,
   TAccountRecipient extends string,
+  TAccountPayer extends string,
   TAccountVerifierProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof PTRANS_PROGRAM_ADDRESS,
 >(
   input: WithdrawAsyncInput<
     TAccountPool,
-    TAccountNullifierSet,
+    TAccountNullifierRecord,
     TAccountPoolVault,
     TAccountRecipient,
+    TAccountPayer,
     TAccountVerifierProgram,
     TAccountSystemProgram
   >,
@@ -174,9 +188,10 @@ export async function getWithdrawInstructionAsync<
   WithdrawInstruction<
     TProgramAddress,
     TAccountPool,
-    TAccountNullifierSet,
+    TAccountNullifierRecord,
     TAccountPoolVault,
     TAccountRecipient,
+    TAccountPayer,
     TAccountVerifierProgram,
     TAccountSystemProgram
   >
@@ -187,9 +202,10 @@ export async function getWithdrawInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     pool: { value: input.pool ?? null, isWritable: true },
-    nullifierSet: { value: input.nullifierSet ?? null, isWritable: true },
+    nullifierRecord: { value: input.nullifierRecord ?? null, isWritable: true },
     poolVault: { value: input.poolVault ?? null, isWritable: true },
     recipient: { value: input.recipient ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isWritable: true },
     verifierProgram: { value: input.verifierProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   }
@@ -205,9 +221,12 @@ export async function getWithdrawInstructionAsync<
   if (!accounts.pool.value) {
     accounts.pool.value = await findPoolPda({ programAddress })
   }
-  if (!accounts.nullifierSet.value) {
-    accounts.nullifierSet.value = await findNullifierSetPda(
-      { pool: getAddressFromResolvedInstructionAccount('pool', accounts.pool.value) },
+  if (!accounts.nullifierRecord.value) {
+    accounts.nullifierRecord.value = await findNullifierRecordPda(
+      {
+        pool: getAddressFromResolvedInstructionAccount('pool', accounts.pool.value),
+        nullifierHash: getNonNullResolvedInstructionInput('nullifierHash', args.nullifierHash),
+      },
       { programAddress },
     )
   }
@@ -226,9 +245,10 @@ export async function getWithdrawInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta('pool', accounts.pool),
-      getAccountMeta('nullifierSet', accounts.nullifierSet),
+      getAccountMeta('nullifierRecord', accounts.nullifierRecord),
       getAccountMeta('poolVault', accounts.poolVault),
       getAccountMeta('recipient', accounts.recipient),
+      getAccountMeta('payer', accounts.payer),
       getAccountMeta('verifierProgram', accounts.verifierProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
     ],
@@ -237,9 +257,10 @@ export async function getWithdrawInstructionAsync<
   } as WithdrawInstruction<
     TProgramAddress,
     TAccountPool,
-    TAccountNullifierSet,
+    TAccountNullifierRecord,
     TAccountPoolVault,
     TAccountRecipient,
+    TAccountPayer,
     TAccountVerifierProgram,
     TAccountSystemProgram
   >)
@@ -247,16 +268,20 @@ export async function getWithdrawInstructionAsync<
 
 export type WithdrawInput<
   TAccountPool extends string = string,
-  TAccountNullifierSet extends string = string,
+  TAccountNullifierRecord extends string = string,
   TAccountPoolVault extends string = string,
   TAccountRecipient extends string = string,
+  TAccountPayer extends string = string,
   TAccountVerifierProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   pool: Address<TAccountPool>
-  nullifierSet: Address<TAccountNullifierSet>
+  /** NullifierRecord PDA — создаётся при первом withdraw для этого nullifier_hash. */
+  nullifierRecord: Address<TAccountNullifierRecord>
   poolVault: Address<TAccountPoolVault>
   recipient: Address<TAccountRecipient>
+  /** Плательщик за создание NullifierRecord. Должен быть подписантом. */
+  payer: TransactionSigner<TAccountPayer>
   verifierProgram: Address<TAccountVerifierProgram>
   systemProgram?: Address<TAccountSystemProgram>
   proof: WithdrawInstructionDataArgs['proof']
@@ -268,18 +293,20 @@ export type WithdrawInput<
 
 export function getWithdrawInstruction<
   TAccountPool extends string,
-  TAccountNullifierSet extends string,
+  TAccountNullifierRecord extends string,
   TAccountPoolVault extends string,
   TAccountRecipient extends string,
+  TAccountPayer extends string,
   TAccountVerifierProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof PTRANS_PROGRAM_ADDRESS,
 >(
   input: WithdrawInput<
     TAccountPool,
-    TAccountNullifierSet,
+    TAccountNullifierRecord,
     TAccountPoolVault,
     TAccountRecipient,
+    TAccountPayer,
     TAccountVerifierProgram,
     TAccountSystemProgram
   >,
@@ -287,9 +314,10 @@ export function getWithdrawInstruction<
 ): WithdrawInstruction<
   TProgramAddress,
   TAccountPool,
-  TAccountNullifierSet,
+  TAccountNullifierRecord,
   TAccountPoolVault,
   TAccountRecipient,
+  TAccountPayer,
   TAccountVerifierProgram,
   TAccountSystemProgram
 > {
@@ -299,9 +327,10 @@ export function getWithdrawInstruction<
   // Original accounts.
   const originalAccounts = {
     pool: { value: input.pool ?? null, isWritable: true },
-    nullifierSet: { value: input.nullifierSet ?? null, isWritable: true },
+    nullifierRecord: { value: input.nullifierRecord ?? null, isWritable: true },
     poolVault: { value: input.poolVault ?? null, isWritable: true },
     recipient: { value: input.recipient ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isWritable: true },
     verifierProgram: { value: input.verifierProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   }
@@ -323,9 +352,10 @@ export function getWithdrawInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta('pool', accounts.pool),
-      getAccountMeta('nullifierSet', accounts.nullifierSet),
+      getAccountMeta('nullifierRecord', accounts.nullifierRecord),
       getAccountMeta('poolVault', accounts.poolVault),
       getAccountMeta('recipient', accounts.recipient),
+      getAccountMeta('payer', accounts.payer),
       getAccountMeta('verifierProgram', accounts.verifierProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
     ],
@@ -334,9 +364,10 @@ export function getWithdrawInstruction<
   } as WithdrawInstruction<
     TProgramAddress,
     TAccountPool,
-    TAccountNullifierSet,
+    TAccountNullifierRecord,
     TAccountPoolVault,
     TAccountRecipient,
+    TAccountPayer,
     TAccountVerifierProgram,
     TAccountSystemProgram
   >)
@@ -349,11 +380,14 @@ export type ParsedWithdrawInstruction<
   programAddress: Address<TProgram>
   accounts: {
     pool: TAccountMetas[0]
-    nullifierSet: TAccountMetas[1]
+    /** NullifierRecord PDA — создаётся при первом withdraw для этого nullifier_hash. */
+    nullifierRecord: TAccountMetas[1]
     poolVault: TAccountMetas[2]
     recipient: TAccountMetas[3]
-    verifierProgram: TAccountMetas[4]
-    systemProgram: TAccountMetas[5]
+    /** Плательщик за создание NullifierRecord. Должен быть подписантом. */
+    payer: TAccountMetas[4]
+    verifierProgram: TAccountMetas[5]
+    systemProgram: TAccountMetas[6]
   }
   data: WithdrawInstructionData
 }
@@ -366,10 +400,10 @@ export function parseWithdrawInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedWithdrawInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 7) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 6,
+      expectedAccountMetas: 7,
     })
   }
   let accountIndex = 0
@@ -382,9 +416,10 @@ export function parseWithdrawInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       pool: getNextAccount(),
-      nullifierSet: getNextAccount(),
+      nullifierRecord: getNextAccount(),
       poolVault: getNextAccount(),
       recipient: getNextAccount(),
+      payer: getNextAccount(),
       verifierProgram: getNextAccount(),
       systemProgram: getNextAccount(),
     },

@@ -7,19 +7,22 @@
  */
 
 import {
+  fixEncoderSize,
   getAddressEncoder,
   getBytesEncoder,
   getProgramDerivedAddress,
   type Address,
   type ProgramDerivedAddress,
+  type ReadonlyUint8Array,
 } from '@solana/kit'
 
-export type NullifierSetSeeds = {
+export type NullifierRecordSeeds = {
   pool: Address
+  nullifierHash: ReadonlyUint8Array
 }
 
-export async function findNullifierSetPda(
-  seeds: NullifierSetSeeds,
+export async function findNullifierRecordPda(
+  seeds: NullifierRecordSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
@@ -28,8 +31,13 @@ export async function findNullifierSetPda(
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
-      getBytesEncoder().encode(new Uint8Array([110, 117, 108, 108, 105, 102, 105, 101, 114, 50])),
+      getBytesEncoder().encode(
+        new Uint8Array([
+          110, 117, 108, 108, 105, 102, 105, 101, 114, 95, 114, 101, 99, 111, 114, 100,
+        ]),
+      ),
       getAddressEncoder().encode(seeds.pool),
+      fixEncoderSize(getBytesEncoder(), 32).encode(seeds.nullifierHash),
     ],
   })
 }

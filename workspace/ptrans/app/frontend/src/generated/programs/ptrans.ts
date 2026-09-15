@@ -17,6 +17,7 @@ import {
   SOLANA_ERROR__PROGRAM_CLIENTS__UNRECOGNIZED_INSTRUCTION_TYPE,
   SolanaError,
   type Address,
+  type ClientWithPayer,
   type ClientWithRpc,
   type ClientWithTransactionPlanning,
   type ClientWithTransactionSending,
@@ -34,10 +35,10 @@ import {
   type SelfPlanAndSendFunctions,
 } from '@solana/program-client-core'
 import {
-  getNullifierSetAccCodec,
+  getNullifierRecordCodec,
   getPoolAccCodec,
-  type NullifierSetAcc,
-  type NullifierSetAccArgs,
+  type NullifierRecord,
+  type NullifierRecordArgs,
   type PoolAcc,
   type PoolAccArgs,
 } from '../accounts'
@@ -55,13 +56,13 @@ import {
   type PoolAsyncInput,
   type WithdrawAsyncInput,
 } from '../instructions'
-import { findNullifierSetPda, findPoolPda, findPoolVaultPda } from '../pdas'
+import { findNullifierRecordPda, findPoolPda, findPoolVaultPda } from '../pdas'
 
 export const PTRANS_PROGRAM_ADDRESS =
   'FbXJSZ171dcnHJVrd5E6KwvXAx7bMgxC44McF84vJ6cK' as Address<'FbXJSZ171dcnHJVrd5E6KwvXAx7bMgxC44McF84vJ6cK'>
 
 export enum PtransAccount {
-  NullifierSetAcc,
+  NullifierRecord,
   PoolAcc,
 }
 
@@ -73,12 +74,12 @@ export function identifyPtransAccount(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([157, 213, 20, 68, 102, 39, 125, 143]),
+        new Uint8Array([56, 18, 57, 175, 69, 202, 189, 70]),
       ),
       0,
     )
   ) {
-    return PtransAccount.NullifierSetAcc
+    return PtransAccount.NullifierRecord
   }
   if (
     containsBytes(
@@ -225,8 +226,8 @@ export type PtransPlugin = {
 }
 
 export type PtransPluginAccounts = {
-  nullifierSetAcc: ReturnType<typeof getNullifierSetAccCodec> &
-    SelfFetchFunctions<NullifierSetAccArgs, NullifierSetAcc>
+  nullifierRecord: ReturnType<typeof getNullifierRecordCodec> &
+    SelfFetchFunctions<NullifierRecordArgs, NullifierRecord>
   poolAcc: ReturnType<typeof getPoolAccCodec> & SelfFetchFunctions<PoolAccArgs, PoolAcc>
 }
 
@@ -238,17 +239,18 @@ export type PtransPluginInstructions = {
     input: PoolAsyncInput,
   ) => ReturnType<typeof getPoolInstructionAsync> & SelfPlanAndSendFunctions
   withdraw: (
-    input: WithdrawAsyncInput,
+    input: MakeOptional<WithdrawAsyncInput, 'payer'>,
   ) => ReturnType<typeof getWithdrawInstructionAsync> & SelfPlanAndSendFunctions
 }
 
 export type PtransPluginPdas = {
   pool: typeof findPoolPda
   poolVault: typeof findPoolVaultPda
-  nullifierSet: typeof findNullifierSetPda
+  nullifierRecord: typeof findNullifierRecordPda
 }
 
 export type PtransPluginRequirements = ClientWithRpc<GetAccountInfoApi & GetMultipleAccountsApi> &
+  ClientWithPayer &
   ClientWithTransactionPlanning &
   ClientWithTransactionSending
 
@@ -259,7 +261,7 @@ export function ptransProgram() {
     return extendClient(client, {
       ptrans: <PtransPlugin>{
         accounts: {
-          nullifierSetAcc: addSelfFetchFunctions(client, getNullifierSetAccCodec()),
+          nullifierRecord: addSelfFetchFunctions(client, getNullifierRecordCodec()),
           poolAcc: addSelfFetchFunctions(client, getPoolAccCodec()),
         },
         instructions: {
@@ -267,9 +269,16 @@ export function ptransProgram() {
             addSelfPlanAndSendFunctions(client, getDepositInstructionAsync(input)),
           pool: (input) => addSelfPlanAndSendFunctions(client, getPoolInstructionAsync(input)),
           withdraw: (input) =>
-            addSelfPlanAndSendFunctions(client, getWithdrawInstructionAsync(input)),
+            addSelfPlanAndSendFunctions(
+              client,
+              getWithdrawInstructionAsync({ ...input, payer: input.payer ?? client.payer }),
+            ),
         },
-        pdas: { pool: findPoolPda, poolVault: findPoolVaultPda, nullifierSet: findNullifierSetPda },
+        pdas: {
+          pool: findPoolPda,
+          poolVault: findPoolVaultPda,
+          nullifierRecord: findNullifierRecordPda,
+        },
         identifyAccount: identifyPtransAccount,
         identifyInstruction: identifyPtransInstruction,
         parseInstruction: parsePtransInstruction,
@@ -277,3 +286,5 @@ export function ptransProgram() {
     })
   }
 }
+
+type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>

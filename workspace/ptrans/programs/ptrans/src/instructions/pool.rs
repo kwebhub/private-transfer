@@ -1,5 +1,5 @@
 use super::*;
-use crate::{EMPTY_ROOT, NULLIFIER_SEED, POOL_SEED, VAULT_SEED};
+use crate::{EMPTY_ROOT, POOL_SEED, VAULT_SEED};
 
 #[derive(Accounts)]
 pub struct InitPool<'info> {
@@ -11,15 +11,6 @@ pub struct InitPool<'info> {
         bump
     )]
     pub pool: Account<'info, PoolAcc>,
-
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + NullifierSetAcc::INIT_SPACE,
-        seeds = [NULLIFIER_SEED, pool.key().as_ref()],
-        bump
-    )]
-    pub nullifier_set: Account<'info, NullifierSetAcc>,
 
     /// CHECK: Vault для хранения SOL
     #[account(mut, seeds = [VAULT_SEED, pool.key().as_ref()], bump)]
@@ -41,10 +32,6 @@ pub fn handler_pool(ctx: Context<InitPool>) -> Result<()> {
     for i in 1..ROOT_HISTORY_SIZE {
         pool.roots[i] = EMPTY_ROOT;
     }
-
-    let nullifier_set = &mut ctx.accounts.nullifier_set;
-    nullifier_set.pool = pool.key();
-    nullifier_set.nullifiers = Vec::new();
 
     msg!("Pool initialized with admin: {}", pool.authority);
     Ok(())

@@ -1,13 +1,9 @@
 use anchor_lang::prelude::*;
 
 #[constant]
-pub const POOL_SEED: &[u8] = b"pool2";
+pub const POOL_SEED: &[u8] = b"pool3";
 
-#[constant]
-pub const NULLIFIER_SEED: &[u8] = b"nullifier2";
-
-#[constant]
-pub const VAULT_SEED: &[u8] = b"vault2";
+pub const VAULT_SEED: &[u8] = b"vault3";
 
 pub const TREE_DEPTH: usize = 20;
 

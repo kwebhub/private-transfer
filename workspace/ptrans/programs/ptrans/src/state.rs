@@ -22,33 +22,18 @@ impl PoolAcc {
     }
 }
 
+/// Запись об использованном нуллификаторе.
+/// Создаётся как отдельный PDA при каждом withdraw.
 #[account]
+#[derive(InitSpace)]
 pub struct NullifierRecord {
     pub pool: Pubkey,
-    pub nullifier: [u8; 32],
-    pub used: bool,
+    pub nullifier_hash: [u8; 32],
+    pub recipient: Pubkey,
+    pub amount: u64,
+    pub timestamp: i64,
 }
 
 impl NullifierRecord {
-    pub const DISCRIMINATOR: &'static [u8] = &[0x12, 0x34, 0x56, 0x78, 0x90, 0xAB, 0xCD, 0xEF];
-    pub const INIT_SPACE: usize = 32 + 32 + 1;
-}
-
-#[account]
-pub struct NullifierSetAcc {
-    pub pool: Pubkey,
-    pub nullifiers: Vec<[u8; 32]>,
-}
-
-impl NullifierSetAcc {
-    // 32 (pool) + 4 (vec length) + 256 * 32 (elements)
-    pub const INIT_SPACE: usize = 32 + 4 + 256 * 32;
-
-    pub fn contains(&self, nullifier: &[u8; 32]) -> bool {
-        self.nullifiers.contains(nullifier)
-    }
-
-    pub fn add(&mut self, nullifier: [u8; 32]) {
-        self.nullifiers.push(nullifier);
-    }
+    pub const SEED: &'static [u8] = b"nullifier_record";
 }

@@ -14,7 +14,7 @@ import {
   ComputeBudgetProgram,
 } from "@solana/web3.js";
 import { Buffer } from "buffer";
-import { findPoolPda, findPoolVaultPda, findNullifierSetPda } from "@/generated/pdas";
+import { findPoolPda, findPoolVaultPda, findNullifierRecordPda } from "@/generated/pdas";
 import { WITHDRAW_DISCRIMINATOR } from "@/generated/instructions/withdraw";
 import { PTRANS_PROGRAM_ADDRESS } from "@/generated/programs";
 
@@ -89,7 +89,6 @@ export function useWithdraw() {
 
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
-      const [nullifierSetPda] = await findNullifierSetPda({ pool: poolPda });
 
       // 1. Получаем commitments из backend
       const commitmentsResponse = await getCommitments(poolPda);
@@ -111,7 +110,7 @@ export function useWithdraw() {
         throw new Error("Your commitment not found in pool");
       }
 
-      // 3. Получаем Merkle proof из backend (проксируется в merkle-сервис)
+      // 3. Получаем Merkle proof из backend
       const proofResponse = await getProof(poolPda, leafIndex);
       const merkleProof = proofResponse.proof.map((h) => hexToBytes(h));
       const isEven = proofResponse.is_even;
@@ -125,7 +124,13 @@ export function useWithdraw() {
       const recipientRealBytes = recipientPubkey.toBytes();
       const recipientReducedBytes = reduceToField(recipientRealBytes);
 
-      // 6. Генерируем witness
+      // 6. Вычисляем PDA для nullifier_record
+      const [nullifierRecordPda] = await findNullifierRecordPda({
+        pool: poolPda,
+        nullifierHash: nullifierHashBytes,
+      });
+
+      // 7. Генерируем witness
       const witness = await generateWithdrawalWitness({
         root: latestRoot,
         nullifierHash: nullifierHashBytes,
@@ -174,17 +179,19 @@ export function useWithdraw() {
       });
       const userPublicKey = new PublicKey(walletStore.walletAddress);
 
+      // Accounts: pool, nullifier_record, pool_vault, recipient, payer, verifier_program, system_program
       const withdrawInstruction = new TransactionInstruction({
         programId: new PublicKey(PTRANS_PROGRAM_ADDRESS),
         keys: [
           { pubkey: new PublicKey(poolPda), isSigner: false, isWritable: true },
           {
-            pubkey: new PublicKey(nullifierSetPda),
+            pubkey: new PublicKey(nullifierRecordPda),
             isSigner: false,
             isWritable: true,
           },
           { pubkey: new PublicKey(vaultPda), isSigner: false, isWritable: true },
           { pubkey: recipientPubkey, isSigner: false, isWritable: true },
+          { pubkey: userPublicKey, isSigner: true, isWritable: true },
           {
             pubkey: new PublicKey(VERIFIER_PROGRAM_ID),
             isSigner: false,

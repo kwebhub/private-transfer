@@ -1,19 +1,24 @@
 import { ref, onMounted } from "vue";
 import { createSolanaRpc, address as solanaAddress } from "@solana/kit";
+import {
+  Connection,
+  PublicKey,
+  TransactionMessage,
+  VersionedTransaction,
+  TransactionInstruction,
+} from "@solana/web3.js";
 import { Buffer } from "buffer";
-import { findPoolPda, findPoolVaultPda, findNullifierSetPda } from "@/generated/pdas";
+import { findPoolPda, findPoolVaultPda } from "@/generated/pdas";
 import { fetchPoolAcc } from "@/generated/accounts";
 import { getPoolInstructionAsync } from "@/generated/instructions/pool";
 import { bytesToHex } from "@/services/crypto";
 import { useWalletStore } from "@/stores/wallet";
-import { Connection, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 
 const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 
 export interface PoolInfo {
   address: string;
   vaultAddress: string;
-  nullifierSetAddress: string;
   vaultBalance: number;
   vaultBalanceSol: number;
   nextLeafIndex: number;
@@ -45,7 +50,6 @@ export function usePool() {
       const rpc = createSolanaRpc(RPC_URL);
       const [poolPda] = await findPoolPda();
       const [vaultPda] = await findPoolVaultPda({ pool: poolPda });
-      const [nullifierSetPda] = await findNullifierSetPda({ pool: poolPda });
 
       const vaultBalanceResponse = await rpc.getBalance(solanaAddress(vaultPda)).send();
       const vaultBalance = Number(vaultBalanceResponse.value);
@@ -73,7 +77,6 @@ export function usePool() {
       poolInfo.value = {
         address: poolPda.toString(),
         vaultAddress: vaultPda.toString(),
-        nullifierSetAddress: nullifierSetPda.toString(),
         vaultBalance,
         vaultBalanceSol: vaultBalance / 1_000_000_000,
         nextLeafIndex,
@@ -102,7 +105,6 @@ export function usePool() {
       const userPublicKey = new PublicKey(walletStore.walletAddress);
       const connection = new Connection(RPC_URL, "confirmed");
 
-      // 1. Создаём instruction через Codama
       const authoritySigner = {
         address: solanaAddress(walletStore.walletAddress),
         signTransactions: async (txs: any[]) =>
@@ -113,21 +115,18 @@ export function usePool() {
         authority: authoritySigner as any,
       });
 
-      // 2. Преобразуем Codama instruction в web3.js instruction
       const keys = poolInstruction.accounts.map((acc: any) => ({
         pubkey: new PublicKey(acc.address),
         isSigner: acc.role === 2 || acc.role === 3,
         isWritable: acc.role === 1 || acc.role === 3,
       }));
 
-      const { TransactionInstruction } = await import("@solana/web3.js");
       const ix = new TransactionInstruction({
         programId: new PublicKey(poolInstruction.programAddress),
         keys,
         data: Buffer.from(poolInstruction.data),
       });
 
-      // 3. Собираем транзакцию
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       const messageV0 = new TransactionMessage({
         payerKey: userPublicKey,
@@ -137,7 +136,6 @@ export function usePool() {
 
       const transaction = new VersionedTransaction(messageV0);
 
-      // 4. Подписываем через signTransaction (без симуляции Phantom)
       if (typeof provider.signTransaction !== "function") {
         throw new Error("Wallet does not support signTransaction");
       }

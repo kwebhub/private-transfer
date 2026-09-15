@@ -6,6 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './nullifierSet'
+export * from './nullifierRecord'
 export * from './pool'
 export * from './poolVault'

@@ -37,7 +37,7 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core'
-import { findNullifierSetPda, findPoolPda, findPoolVaultPda } from '../pdas'
+import { findPoolPda, findPoolVaultPda } from '../pdas'
 import { PTRANS_PROGRAM_ADDRESS } from '../programs'
 
 export const POOL_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -51,7 +51,6 @@ export function getPoolDiscriminatorBytes(): ReadonlyUint8Array {
 export type PoolInstruction<
   TProgram extends string = typeof PTRANS_PROGRAM_ADDRESS,
   TAccountPool extends string | AccountMeta<string> = string,
-  TAccountNullifierSet extends string | AccountMeta<string> = string,
   TAccountPoolVault extends string | AccountMeta<string> = string,
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
@@ -61,9 +60,6 @@ export type PoolInstruction<
   InstructionWithAccounts<
     [
       TAccountPool extends string ? WritableAccount<TAccountPool> : TAccountPool,
-      TAccountNullifierSet extends string
-        ? WritableAccount<TAccountNullifierSet>
-        : TAccountNullifierSet,
       TAccountPoolVault extends string ? WritableAccount<TAccountPoolVault> : TAccountPoolVault,
       TAccountAuthority extends string
         ? WritableSignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority>
@@ -99,13 +95,11 @@ export function getPoolInstructionDataCodec(): FixedSizeCodec<
 
 export type PoolAsyncInput<
   TAccountPool extends string = string,
-  TAccountNullifierSet extends string = string,
   TAccountPoolVault extends string = string,
   TAccountAuthority extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   pool?: Address<TAccountPool>
-  nullifierSet?: Address<TAccountNullifierSet>
   poolVault?: Address<TAccountPoolVault>
   authority: TransactionSigner<TAccountAuthority>
   systemProgram?: Address<TAccountSystemProgram>
@@ -113,25 +107,17 @@ export type PoolAsyncInput<
 
 export async function getPoolInstructionAsync<
   TAccountPool extends string,
-  TAccountNullifierSet extends string,
   TAccountPoolVault extends string,
   TAccountAuthority extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof PTRANS_PROGRAM_ADDRESS,
 >(
-  input: PoolAsyncInput<
-    TAccountPool,
-    TAccountNullifierSet,
-    TAccountPoolVault,
-    TAccountAuthority,
-    TAccountSystemProgram
-  >,
+  input: PoolAsyncInput<TAccountPool, TAccountPoolVault, TAccountAuthority, TAccountSystemProgram>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
   PoolInstruction<
     TProgramAddress,
     TAccountPool,
-    TAccountNullifierSet,
     TAccountPoolVault,
     TAccountAuthority,
     TAccountSystemProgram
@@ -143,7 +129,6 @@ export async function getPoolInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     pool: { value: input.pool ?? null, isWritable: true },
-    nullifierSet: { value: input.nullifierSet ?? null, isWritable: true },
     poolVault: { value: input.poolVault ?? null, isWritable: true },
     authority: { value: input.authority ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -156,12 +141,6 @@ export async function getPoolInstructionAsync<
   // Resolve default values.
   if (!accounts.pool.value) {
     accounts.pool.value = await findPoolPda({ programAddress })
-  }
-  if (!accounts.nullifierSet.value) {
-    accounts.nullifierSet.value = await findNullifierSetPda(
-      { pool: getAddressFromResolvedInstructionAccount('pool', accounts.pool.value) },
-      { programAddress },
-    )
   }
   if (!accounts.poolVault.value) {
     accounts.poolVault.value = await findPoolVaultPda(
@@ -178,7 +157,6 @@ export async function getPoolInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta('pool', accounts.pool),
-      getAccountMeta('nullifierSet', accounts.nullifierSet),
       getAccountMeta('poolVault', accounts.poolVault),
       getAccountMeta('authority', accounts.authority),
       getAccountMeta('systemProgram', accounts.systemProgram),
@@ -188,7 +166,6 @@ export async function getPoolInstructionAsync<
   } as PoolInstruction<
     TProgramAddress,
     TAccountPool,
-    TAccountNullifierSet,
     TAccountPoolVault,
     TAccountAuthority,
     TAccountSystemProgram
@@ -197,13 +174,11 @@ export async function getPoolInstructionAsync<
 
 export type PoolInput<
   TAccountPool extends string = string,
-  TAccountNullifierSet extends string = string,
   TAccountPoolVault extends string = string,
   TAccountAuthority extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   pool: Address<TAccountPool>
-  nullifierSet: Address<TAccountNullifierSet>
   poolVault: Address<TAccountPoolVault>
   authority: TransactionSigner<TAccountAuthority>
   systemProgram?: Address<TAccountSystemProgram>
@@ -211,24 +186,16 @@ export type PoolInput<
 
 export function getPoolInstruction<
   TAccountPool extends string,
-  TAccountNullifierSet extends string,
   TAccountPoolVault extends string,
   TAccountAuthority extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof PTRANS_PROGRAM_ADDRESS,
 >(
-  input: PoolInput<
-    TAccountPool,
-    TAccountNullifierSet,
-    TAccountPoolVault,
-    TAccountAuthority,
-    TAccountSystemProgram
-  >,
+  input: PoolInput<TAccountPool, TAccountPoolVault, TAccountAuthority, TAccountSystemProgram>,
   config?: { programAddress?: TProgramAddress },
 ): PoolInstruction<
   TProgramAddress,
   TAccountPool,
-  TAccountNullifierSet,
   TAccountPoolVault,
   TAccountAuthority,
   TAccountSystemProgram
@@ -239,7 +206,6 @@ export function getPoolInstruction<
   // Original accounts.
   const originalAccounts = {
     pool: { value: input.pool ?? null, isWritable: true },
-    nullifierSet: { value: input.nullifierSet ?? null, isWritable: true },
     poolVault: { value: input.poolVault ?? null, isWritable: true },
     authority: { value: input.authority ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -259,7 +225,6 @@ export function getPoolInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta('pool', accounts.pool),
-      getAccountMeta('nullifierSet', accounts.nullifierSet),
       getAccountMeta('poolVault', accounts.poolVault),
       getAccountMeta('authority', accounts.authority),
       getAccountMeta('systemProgram', accounts.systemProgram),
@@ -269,7 +234,6 @@ export function getPoolInstruction<
   } as PoolInstruction<
     TProgramAddress,
     TAccountPool,
-    TAccountNullifierSet,
     TAccountPoolVault,
     TAccountAuthority,
     TAccountSystemProgram
@@ -283,10 +247,9 @@ export type ParsedPoolInstruction<
   programAddress: Address<TProgram>
   accounts: {
     pool: TAccountMetas[0]
-    nullifierSet: TAccountMetas[1]
-    poolVault: TAccountMetas[2]
-    authority: TAccountMetas[3]
-    systemProgram: TAccountMetas[4]
+    poolVault: TAccountMetas[1]
+    authority: TAccountMetas[2]
+    systemProgram: TAccountMetas[3]
   }
   data: PoolInstructionData
 }
@@ -299,10 +262,10 @@ export function parsePoolInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedPoolInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 5) {
+  if (instruction.accounts.length < 4) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 5,
+      expectedAccountMetas: 4,
     })
   }
   let accountIndex = 0
@@ -315,7 +278,6 @@ export function parsePoolInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       pool: getNextAccount(),
-      nullifierSet: getNextAccount(),
       poolVault: getNextAccount(),
       authority: getNextAccount(),
       systemProgram: getNextAccount(),

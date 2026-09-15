@@ -47,15 +47,6 @@ const formatAddress = (addr: string) => {
             ) 🔗
 
         .info-item
-          .label Nullifier Set
-          .value
-            span {{ formatAddress(poolInfo.nullifierSetAddress) }}
-            a(
-              :href="`https://explorer.solana.com/address/${poolInfo.nullifierSetAddress}?cluster=devnet`"
-              target="_blank"
-            ) 🔗
-
-        .info-item
           .label Vault Balance
           .value {{ poolInfo.vaultBalanceSol }} SOL
           .sub {{ poolInfo.vaultBalance }} lamports
