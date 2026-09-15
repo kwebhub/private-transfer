@@ -160,4 +160,23 @@ impl Cache {
         let key = format!("tree:{}:empty:{}", pool_address, level);
         self.set(&key, hash).await
     }
+
+    /// Получить последнюю обработанную сигнатуру для pool
+    pub async fn get_last_signature(
+        &self,
+        pool_address: &str,
+    ) -> Result<Option<String>, redis::RedisError> {
+        let key = format!("indexer:{}:last_signature", pool_address);
+        self.get(&key).await
+    }
+
+    /// Записать последнюю обработанную сигнатуру для pool
+    pub async fn set_last_signature(
+        &self,
+        pool_address: &str,
+        signature: &str,
+    ) -> Result<(), redis::RedisError> {
+        let key = format!("indexer:{}:last_signature", pool_address);
+        self.set(&key, signature).await
+    }
 }
