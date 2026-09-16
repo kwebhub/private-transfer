@@ -240,6 +240,10 @@ jobs:
         working-directory: workspace/ptrans/app/merkle
         run: node --check src/server.js
 
+      - name: npm test
+        working-directory: workspace/ptrans/app/merkle
+        run: npm test
+
   # ============================================================
   # Frontend: install + build
   # ============================================================
