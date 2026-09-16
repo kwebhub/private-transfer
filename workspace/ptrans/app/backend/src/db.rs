@@ -1,12 +1,23 @@
+//! Обёртка над Postgres.
+//!
+//! Источник истины для:
+//! - `commitments` — все листья Merkle Tree.
+//! - `roots` — история корней (для проверки старых proof).
+//! - `nullifiers` — использованные нуллификаторы (защита от double-spend).
+
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
+/// Обёртка над пулом соединений Postgres.
 #[derive(Clone)]
 pub struct Db {
     pool: PgPool,
 }
 
 impl Db {
+    /// Создаёт пул соединений и проверяет подключение.
+    ///
+    /// Максимум — 10 соединений в пуле.
     pub async fn new(database_url: &str) -> Result<Self, sqlx::Error> {
         let pool = PgPoolOptions::new()
             .max_connections(10)
@@ -15,10 +26,23 @@ impl Db {
         Ok(Self { pool })
     }
 
+    /// Возвращает ссылку на пул для прямых запросов.
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 
+    /// Сохраняет депозит в БД (commitments + roots).
+    ///
+    /// Транзакционно: либо оба INSERT'а, либо ничего.
+    /// Идемпотентно — повторный INSERT игнорируется (`ON CONFLICT DO NOTHING`).
+    ///
+    /// # Параметры
+    ///
+    /// - `leaf_index` — индекс листа в Merkle Tree.
+    /// - `commitment` — 32 байта (Poseidon2-хеш).
+    /// - `new_root` — корень после добавления листа.
+    /// - `pool_address` — адрес PoolAcc PDA (Base58).
+    /// - `tx_signature` — сигнатура транзакции депозита.
     pub async fn save_deposit(
         &self,
         leaf_index: i64,
@@ -61,6 +85,7 @@ impl Db {
         Ok(())
     }
 
+    /// Проверяет, использован ли нуллификатор.
     pub async fn is_nullifier_used(&self, nullifier_hash: &[u8]) -> Result<bool, sqlx::Error> {
         let count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM nullifiers WHERE nullifier_hash = $1")
@@ -71,6 +96,7 @@ impl Db {
         Ok(count > 0)
     }
 
+    /// Проверяет, записан ли commitment с таким `leaf_index`.
     pub async fn commitment_exists(&self, leaf_index: i64) -> Result<bool, sqlx::Error> {
         let count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM commitments WHERE leaf_index = $1")
@@ -81,6 +107,9 @@ impl Db {
         Ok(count > 0)
     }
 
+    /// Записывает использованный нуллификатор.
+    ///
+    /// Идемпотентно — повторный INSERT игнорируется.
     pub async fn save_nullifier(
         &self,
         nullifier_hash: &[u8],
@@ -107,6 +136,7 @@ impl Db {
         Ok(())
     }
 
+    /// Возвращает все commitments для пула, отсортированные по `leaf_index`.
     pub async fn get_commitments(
         &self,
         pool_address: &str,
@@ -121,6 +151,7 @@ impl Db {
         Ok(rows)
     }
 
+    /// Возвращает последний добавленный root.
     pub async fn get_latest_root(
         &self,
         pool_address: &str,

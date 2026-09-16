@@ -1,7 +1,13 @@
 //! Rate limiting middleware для axum.
 //!
-//! Лимиты читаются из `Config` (env).
-//! Счётчики хранятся в Redis (INCR + EXPIRE).
+//! Лимиты читаются из `Config`:
+//! - `RATE_LIMIT_WITHDRAW_PER_MIN` (по умолчанию 5) — для `/api/withdraw`.
+//! - `RATE_LIMIT_READ_PER_MIN` (по умолчанию 60) — для чтения.
+//!
+//! ## Как работает
+//!
+//! Счётчики хранятся в Redis: `ratelimit:{endpoint}:{ip}` с TTL 60 секунд.
+//! При превышении лимита возвращается `429 Too Many Requests`.
 
 use crate::cache::Cache;
 use crate::config::Config;
@@ -24,7 +30,9 @@ fn read_limit(config: &Config) -> u64 {
     config.rate_limit_read_per_min
 }
 
-/// Middleware: rate limiting для /api/withdraw.
+/// Middleware: rate limiting для `/api/withdraw`.
+///
+/// Использует `WITHDRAW_LIMIT_PER_MIN` из `Config`.
 pub async fn rate_limit_withdraw(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     request: Request<Body>,
@@ -56,7 +64,9 @@ pub async fn rate_limit_withdraw(
     Ok(next.run(request).await)
 }
 
-/// Middleware: rate limiting для чтения (commitments, root, proof).
+/// Middleware: rate limiting для чтения (`/api/commitments`, `/api/root`, `/api/proof`).
+///
+/// Использует `READ_LIMIT_PER_MIN` из `Config`.
 pub async fn rate_limit_read(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     request: Request<Body>,

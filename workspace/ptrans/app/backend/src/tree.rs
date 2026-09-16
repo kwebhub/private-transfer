@@ -1,8 +1,16 @@
 //! Инкрементальное Merkle Tree в Redis.
 //!
-//! Дерево хранится уровнями: `tree:{pool}:level:{d}`.
-//! Для каждого уровня — пустой хеш: `tree:{pool}:empty:{d}`.
-//! Корень: `tree:{pool}:root`, размер: `tree:{pool}:size`.
+//! ## Структура в Redis
+//!
+//! - `tree:{pool}:level:{d}` — JSON-массив хешей уровня `d`.
+//! - `tree:{pool}:empty:{d}` — "пустой" хеш для уровня `d` (для пустых siblings).
+//! - `tree:{pool}:root` — текущий корень.
+//! - `tree:{pool}:size` — количество реальных листьев.
+//!
+//! ## Алгоритм
+//!
+//! При добавлении листа обновляется **только путь** от листа до корня
+//! (O(DEPTH) = 20 Poseidon2-хешей), а не всё дерево (2^DEPTH = 1M хешей).
 //!
 //! Глубина дерева передаётся из `Config`.
 
@@ -11,8 +19,12 @@ use crate::metrics;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Хеш пустого листа (32 нулевых байта в hex).
 const EMPTY_LEAF: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// Вычисляет Poseidon2 hash через merkle-сервис.
+///
+/// Записывает метрику `ptrans_tree_hash_duration_seconds`.
 async fn poseidon2_hash(
     client: &reqwest::Client,
     merkle_url: &str,
@@ -45,6 +57,9 @@ async fn poseidon2_hash(
     Ok(hash)
 }
 
+/// Инициализирует пустое дерево в Redis.
+///
+/// Записывает уровни 0..=depth с "пустыми" хешами, root и size=0.
 pub async fn init_empty_tree(
     cache: &Arc<Cache>,
     merkle_url: &str,
@@ -74,6 +89,19 @@ pub async fn init_empty_tree(
     Ok(())
 }
 
+/// Добавляет новый лист в дерево и обновляет путь до корня.
+///
+/// Возвращает новый корень.
+///
+/// # Идемпотентность
+///
+/// Если `leaf_index != size` — лист уже добавлен (или пропущен), возвращает текущий root.
+///
+/// # Метрики
+///
+/// - `ptrans_tree_add_leaf_duration_seconds` — время добавления.
+/// - `ptrans_tree_add_leaf_total` — количество добавленных листьев.
+/// - `ptrans_tree_errors_total` — ошибки.
 pub async fn add_leaf(
     cache: &Arc<Cache>,
     merkle_url: &str,
@@ -165,6 +193,12 @@ pub async fn add_leaf(
     Ok(root)
 }
 
+/// Возвращает Merkle proof для указанного `leaf_index`.
+///
+/// Returns `(proof, is_even, root)`, где:
+/// - `proof` — массив из `depth` siblings (hex).
+/// - `is_even` — массив из `depth` bool (`true`, если лист слева).
+/// - `root` — текущий корень.
 pub async fn get_proof(
     cache: &Arc<Cache>,
     pool_address: &str,
