@@ -36,12 +36,6 @@ impl Cache {
         conn.get(key).await
     }
 
-    /// Удалить ключ
-    pub async fn del(&self, key: &str) -> Result<(), redis::RedisError> {
-        let mut conn = self.conn.clone();
-        conn.del::<_, ()>(key).await
-    }
-
     /// Инвалидировать кеш для указанного pool
     pub async fn invalidate_pool(&self, pool_address: &str) -> Result<(), redis::RedisError> {
         let mut conn = self.conn.clone();
@@ -123,22 +117,6 @@ impl Cache {
     ) -> Result<(), redis::RedisError> {
         let key = format!("tree:{}:size", pool_address);
         self.set(&key, &size.to_string()).await
-    }
-
-    /// Полностью очистить дерево в кеше
-    pub async fn clear_tree(&self, pool_address: &str) -> Result<(), redis::RedisError> {
-        let mut conn = self.conn.clone();
-
-        let mut keys = vec![
-            format!("tree:{}:root", pool_address),
-            format!("tree:{}:size", pool_address),
-        ];
-        // 21 уровень (0..20) + корень
-        for d in 0..=20 {
-            keys.push(format!("tree:{}:level:{}", pool_address, d));
-        }
-
-        conn.del::<_, ()>(keys).await
     }
 
     /// Получить empty hash для уровня
