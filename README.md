@@ -3,7 +3,7 @@
 
 > Private SOL transfers on Solana using Groth16 zero-knowledge proofs.
 
-[![CI](https://github.com/kwebhub/private-transfer/actions/workflows/ci.yml/badge.svg)](https://github.com/kwebhub/private-transfer/actions/workflows/ci.yml)
+[![CI](https://github.com/kwebhub/private-transfer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kwebhub/private-transfer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solana](https://img.shields.io/badge/Solana-Devnet-9945FF?logo=solana)](https://solana.com)
 [![Noir](https://img.shields.io/badge/Noir-1.0.0--rc.1-blue)](https://noir-lang.org)
