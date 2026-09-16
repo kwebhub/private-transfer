@@ -7,11 +7,12 @@ use axum::{
 };
 use axum_prometheus::PrometheusMetricLayer;
 use metrics_exporter_prometheus::PrometheusBuilder;
-use ptrans_backend::{cache, config::Config, db, indexer, metrics, rate_limit, tree};
+use ptrans_backend::{cache, config::Config, db, indexer, logging, metrics, rate_limit, tree};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+use tracing::{error, info, warn};
 
 // ============ СТРУКТУРЫ ============
 
@@ -97,6 +98,7 @@ async fn handle_withdraw(
         .send()
         .await
         .map_err(|e| {
+            error!(error = %e, "prover request failed");
             (
                 StatusCode::BAD_GATEWAY,
                 format!("Prover request failed: {}", e),
@@ -106,6 +108,7 @@ async fn handle_withdraw(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        warn!(status = %status, "prover returned error");
         return Err((
             StatusCode::BAD_GATEWAY,
             format!("Prover error {}: {}", status, body),
@@ -113,6 +116,7 @@ async fn handle_withdraw(
     }
 
     let prover_response: WithdrawResponse = resp.json().await.map_err(|e| {
+        error!(error = %e, "invalid prover response");
         (
             StatusCode::BAD_GATEWAY,
             format!("Invalid prover response: {}", e),
@@ -139,6 +143,7 @@ async fn handle_commitments(
         .get_commitments(&query.pool_address)
         .await
         .map_err(|e| {
+            error!(error = %e, "db error");
             metrics::record_db_error();
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -176,6 +181,7 @@ async fn handle_root(
         .get_latest_root(&query.pool_address)
         .await
         .map_err(|e| {
+            error!(error = %e, "db error");
             metrics::record_db_error();
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -218,6 +224,7 @@ async fn handle_proof(
             }))
         }
         Err(e) => {
+            error!(error = %e, "tree error");
             metrics::record_tree_error();
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -233,26 +240,27 @@ async fn handle_proof(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `.env` лежит в workspace/ptrans/.env — на 2 уровня выше app/backend/
     dotenvy::from_filename("../../.env").ok();
-    // Fallback: .env в текущей директории (для тестов)
     dotenvy::dotenv().ok();
 
-    // Загружаем конфигурацию из env
-    let config = Arc::new(Config::from_env()?);
-    println!("⚙️  Config loaded");
+    // Инициализация tracing (использует RUST_LOG)
+    logging::init();
+    info!("⚙️  Logging initialized");
 
-    // Prometheus recorder
+    let config = Arc::new(Config::from_env()?);
+    info!(port = config.port, "Config loaded");
+
     let prometheus_handle = PrometheusBuilder::new()
         .install_recorder()
         .map_err(|e| format!("Failed to install Prometheus recorder: {}", e))?;
 
     metrics::init_metrics();
-    println!("📊 Metrics initialized");
+    info!("📊 Metrics initialized");
 
     let db = db::Db::new(&config.database_url).await?;
-    println!("✅ Connected to Postgres");
+    info!("✅ Connected to Postgres");
 
     let cache = cache::Cache::new(&config.redis_url).await?;
-    println!("✅ Connected to Redis");
+    info!("✅ Connected to Redis");
 
     let db_arc = Arc::new(db);
     let cache_arc = Arc::new(cache);
@@ -270,7 +278,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?
             .is_none()
     {
-        println!("🌳 Initializing empty tree in Redis...");
+        info!("🌳 Initializing empty tree in Redis...");
         tree::init_empty_tree(
             &cache_arc,
             &config.merkle_url,
@@ -287,11 +295,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(0);
 
     if db_commitments.len() > current_size {
-        println!(
-            "🌳 Syncing tree: DB has {} commitments, Redis has {} — adding {} more",
-            db_commitments.len(),
-            current_size,
-            db_commitments.len() - current_size
+        info!(
+            db_len = db_commitments.len(),
+            redis_len = current_size,
+            "🌳 Syncing tree"
         );
 
         for (leaf_index, commitment) in &db_commitments[current_size..] {
@@ -312,21 +319,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .get_tree_root(&config.pool_address)
             .await?
             .unwrap_or_else(|| "unknown".to_string());
-        println!("🌳 Tree synced: root={}", final_root);
+        info!(root = %final_root, "🌳 Tree synced");
     } else {
         let root = cache_arc
             .get_tree_root(&config.pool_address)
             .await?
             .unwrap_or_else(|| "unknown".to_string());
-        println!(
-            "🌳 Tree already in sync: {} leaves, root={}",
-            current_size, root
+        info!(
+            leaves = current_size,
+            root = %root,
+            "🌳 Tree already in sync"
         );
     }
 
     if current_size > 0 {
         metrics::record_deposit(current_size as i64 - 1);
-        println!("📊 Recorded tree size: {}", current_size);
+        info!(size = current_size, "📊 Recorded tree size");
     }
 
     let state = AppState {
@@ -381,14 +389,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = format!("0.0.0.0:{}", config.port);
 
-    println!("🚀 Backend server running on http://{}", addr);
-    println!("📡 Endpoints:");
-    println!("  POST /api/withdraw    - Proxy to prover service");
-    println!("  GET  /api/commitments - List all commitments (cached)");
-    println!("  GET  /api/root        - Get latest root (from Redis tree)");
-    println!("  GET  /api/proof       - Get Merkle proof (from Redis tree)");
-    println!("  GET  /api/health      - Health check");
-    println!("  GET  /metrics         - Prometheus metrics");
+    info!(%addr, "🚀 Backend server running");
+    info!("📡 Endpoints:");
+    info!("  POST /api/withdraw    - Proxy to prover service");
+    info!("  GET  /api/commitments - List all commitments (cached)");
+    info!("  GET  /api/root        - Get latest root (from Redis tree)");
+    info!("  GET  /api/proof       - Get Merkle proof (from Redis tree)");
+    info!("  GET  /api/health      - Health check");
+    info!("  GET  /metrics         - Prometheus metrics");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
