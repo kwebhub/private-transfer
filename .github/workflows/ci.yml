@@ -142,22 +142,25 @@ jobs:
       - name: Install Noir (nargo)
         run: |
           curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          # noirup кладёт бинарь в ~/.nargo/bin
           echo "$HOME/.nargo/bin" >> $GITHUB_PATH
 
-      - name: nargo --version
-        run: nargo --version
+      - name: Verify nargo installation
+        run: |
+          ls -la $HOME/.nargo/bin/ || true
+          $HOME/.nargo/bin/nargo --version
 
       - name: nargo test (withdrawal)
         working-directory: workspace/ptrans/app/circuits/withdrawal
-        run: nargo test
+        run: $HOME/.nargo/bin/nargo test
 
       - name: nargo test (hash2)
         working-directory: workspace/ptrans/app/circuits/hash2
-        run: nargo test
+        run: $HOME/.nargo/bin/nargo test
 
       - name: nargo test (hashes)
         working-directory: workspace/ptrans/app/circuits/hashes
-        run: nargo test
+        run: $HOME/.nargo/bin/nargo test
 
   # ============================================================
   # Merkle service: install + build
