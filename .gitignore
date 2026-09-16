@@ -78,3 +78,9 @@ grafana-data/
 /tmp/
 workspace/sunspot/
 journal.md
+
+# ============ Env files (secrets) ============
+.env
+**/.env
+!.env.example
+!**/.env.example

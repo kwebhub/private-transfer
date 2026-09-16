@@ -102,8 +102,9 @@ start_backend() {
   fi
 
   log_info "Запускаю backend..."
+  # PORT читается из workspace/ptrans/.env через dotenvy
   tmux new-session -d -s "$session" -c "$BACKEND_DIR" \
-    "PORT=4001 cargo run 2>&1 | tee /tmp/ptrans-backend.log"
+    "cargo run 2>&1 | tee /tmp/ptrans-backend.log"
   log_ok "backend → tmux attach -t $session"
 }
 

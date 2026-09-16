@@ -7,7 +7,7 @@ use axum::{
 };
 use axum_prometheus::PrometheusMetricLayer;
 use metrics_exporter_prometheus::PrometheusBuilder;
-use ptrans_backend::{cache, db, indexer, metrics, rate_limit, tree};
+use ptrans_backend::{cache, config::Config, db, indexer, metrics, rate_limit, tree};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -19,6 +19,7 @@ use tower_http::cors::CorsLayer;
 struct AppState {
     db: Arc<db::Db>,
     cache: Arc<cache::Cache>,
+    config: Arc<Config>,
 }
 
 #[derive(Deserialize)]
@@ -84,11 +85,10 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
 }
 
 async fn handle_withdraw(
+    State(state): State<AppState>,
     Json(payload): Json<WithdrawRequest>,
 ) -> Result<Json<WithdrawResponse>, (StatusCode, String)> {
-    let prover_url =
-        std::env::var("PROVER_URL").unwrap_or_else(|_| "http://localhost:4002".to_string());
-    let url = format!("{}/prove", prover_url);
+    let url = format!("{}/prove", state.config.prover_url);
 
     let client = reqwest::Client::new();
     let resp = client
@@ -195,7 +195,14 @@ async fn handle_proof(
     State(state): State<AppState>,
     Query(query): Query<ProofQuery>,
 ) -> Result<Json<ProofResponse>, (StatusCode, String)> {
-    match tree::get_proof(&state.cache, &query.pool_address, query.leaf_index).await {
+    match tree::get_proof(
+        &state.cache,
+        &query.pool_address,
+        query.leaf_index,
+        state.config.merkle_tree_depth,
+    )
+    .await
+    {
         Ok((proof, is_even, root)) => {
             if root == "0000000000000000000000000000000000000000000000000000000000000000" {
                 return Err((
@@ -224,9 +231,16 @@ async fn handle_proof(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // `.env` лежит в workspace/ptrans/.env — на 2 уровня выше app/backend/
+    dotenvy::from_filename("../../.env").ok();
+    // Fallback: .env в текущей директории (для тестов)
     dotenvy::dotenv().ok();
 
-    // 1. Устанавливаем глобальный Prometheus recorder
+    // Загружаем конфигурацию из env
+    let config = Arc::new(Config::from_env()?);
+    println!("⚙️  Config loaded");
+
+    // Prometheus recorder
     let prometheus_handle = PrometheusBuilder::new()
         .install_recorder()
         .map_err(|e| format!("Failed to install Prometheus recorder: {}", e))?;
@@ -234,39 +248,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     metrics::init_metrics();
     println!("📊 Metrics initialized");
 
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://ptrans:ptrans_dev_password@localhost:5432/ptrans".to_string()
-    });
-    let db = db::Db::new(&database_url).await?;
+    let db = db::Db::new(&config.database_url).await?;
     println!("✅ Connected to Postgres");
 
-    let redis_url =
-        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
-    let cache = cache::Cache::new(&redis_url).await?;
+    let cache = cache::Cache::new(&config.redis_url).await?;
     println!("✅ Connected to Redis");
 
     let db_arc = Arc::new(db);
     let cache_arc = Arc::new(cache);
 
-    let rpc_url = std::env::var("SOLANA_RPC_URL")
-        .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
-    let pool_address = std::env::var("POOL_ADDRESS")
-        .unwrap_or_else(|_| "TQYnBSBF3z3FxMHupvt3cbKYXqsorYY9gYb19rjCncN".to_string());
-    let merkle_url =
-        std::env::var("MERKLE_URL").unwrap_or_else(|_| "http://localhost:4003".to_string());
-
     // Синхронизация дерева
-    let tree_size = cache_arc.get_tree_size(&pool_address).await?.unwrap_or(0);
-    let db_commitments = db_arc.get_commitments(&pool_address).await?;
+    let tree_size = cache_arc
+        .get_tree_size(&config.pool_address)
+        .await?
+        .unwrap_or(0);
+    let db_commitments = db_arc.get_commitments(&config.pool_address).await?;
 
-    if tree_size == 0 && cache_arc.get_tree_root(&pool_address).await?.is_none() {
+    if tree_size == 0
+        && cache_arc
+            .get_tree_root(&config.pool_address)
+            .await?
+            .is_none()
+    {
         println!("🌳 Initializing empty tree in Redis...");
-        tree::init_empty_tree(&cache_arc, &merkle_url, &pool_address)
-            .await
-            .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
+        tree::init_empty_tree(
+            &cache_arc,
+            &config.merkle_url,
+            &config.pool_address,
+            config.merkle_tree_depth,
+        )
+        .await
+        .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
     }
 
-    let current_size = cache_arc.get_tree_size(&pool_address).await?.unwrap_or(0);
+    let current_size = cache_arc
+        .get_tree_size(&config.pool_address)
+        .await?
+        .unwrap_or(0);
 
     if db_commitments.len() > current_size {
         println!(
@@ -280,23 +298,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let commitment_hex = hex::encode(commitment);
             tree::add_leaf(
                 &cache_arc,
-                &merkle_url,
-                &pool_address,
+                &config.merkle_url,
+                &config.pool_address,
                 *leaf_index as usize,
                 &commitment_hex,
+                config.merkle_tree_depth,
             )
             .await
             .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
         }
 
         let final_root = cache_arc
-            .get_tree_root(&pool_address)
+            .get_tree_root(&config.pool_address)
             .await?
             .unwrap_or_else(|| "unknown".to_string());
         println!("🌳 Tree synced: root={}", final_root);
     } else {
         let root = cache_arc
-            .get_tree_root(&pool_address)
+            .get_tree_root(&config.pool_address)
             .await?
             .unwrap_or_else(|| "unknown".to_string());
         println!(
@@ -313,15 +332,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState {
         db: db_arc.clone(),
         cache: cache_arc.clone(),
+        config: config.clone(),
     };
 
-    let indexer = indexer::Indexer::new(
-        db_arc.clone(),
-        cache_arc.clone(),
-        rpc_url,
-        pool_address.clone(),
-        merkle_url.clone(),
-    );
+    let indexer = indexer::Indexer::new(db_arc.clone(), cache_arc.clone(), config.clone());
     tokio::spawn(async move {
         indexer.run().await;
     });
@@ -332,6 +346,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/withdraw", post(handle_withdraw))
         .layer(middleware::from_fn(rate_limit::rate_limit_withdraw))
         .layer(axum::Extension(cache_arc.clone()))
+        .layer(axum::Extension(config.clone()))
         .with_state(state.clone());
 
     let read_routes = Router::new()
@@ -340,6 +355,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/proof", get(handle_proof))
         .layer(middleware::from_fn(rate_limit::rate_limit_read))
         .layer(axum::Extension(cache_arc.clone()))
+        .layer(axum::Extension(config.clone()))
         .with_state(state.clone());
 
     let health_routes = Router::new()
@@ -363,16 +379,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(prometheus_layer)
         .layer(CorsLayer::permissive());
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "4001".to_string());
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("0.0.0.0:{}", config.port);
 
     println!("🚀 Backend server running on http://{}", addr);
     println!("📡 Endpoints:");
-    println!("  POST /api/withdraw    - Proxy to prover service (5 req/min)");
-    println!("  GET  /api/commitments - List all commitments (60 req/min)");
-    println!("  GET  /api/root        - Get latest root (60 req/min)");
-    println!("  GET  /api/proof       - Get Merkle proof (60 req/min)");
-    println!("  GET  /api/health      - Health check (unlimited)");
+    println!("  POST /api/withdraw    - Proxy to prover service");
+    println!("  GET  /api/commitments - List all commitments (cached)");
+    println!("  GET  /api/root        - Get latest root (from Redis tree)");
+    println!("  GET  /api/proof       - Get Merkle proof (from Redis tree)");
+    println!("  GET  /api/health      - Health check");
     println!("  GET  /metrics         - Prometheus metrics");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
