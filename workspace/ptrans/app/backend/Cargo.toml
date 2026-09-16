@@ -28,7 +28,7 @@ dotenvy = "0.15"
 anyhow = "1.0"
 
 # База данных
-sqlx = { version = "0.7", default-features = false, features = [
+sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio",
     "tls-native-tls",
     "postgres",
