@@ -1,0 +1,253 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ============================================================
+  # Backend: fmt + clippy + build
+  # ============================================================
+  backend:
+    name: Backend (Rust)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workspace/ptrans/app/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            workspace/ptrans/app/backend/target/
+          key: ${{ runner.os }}-cargo-backend-${{ hashFiles('workspace/ptrans/app/backend/Cargo.lock') }}
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo build
+        run: cargo build --release
+
+  # ============================================================
+  # Prover: fmt + clippy + build
+  # ============================================================
+  prover:
+    name: Prover (Rust)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workspace/ptrans/app/prover
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            workspace/ptrans/app/prover/target/
+          key: ${{ runner.os }}-cargo-prover-${{ hashFiles('workspace/ptrans/app/prover/Cargo.lock') }}
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo build
+        run: cargo build --release
+
+  # ============================================================
+  # Anchor program: build
+  # ============================================================
+  program:
+    name: Anchor program
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-program-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Anchor
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --force
+          avm install 0.30.1
+          avm use 0.30.1
+
+      - name: anchor build
+        run: anchor build
+
+  # ============================================================
+  # Noir circuits: nargo test
+  # ============================================================
+  noir:
+    name: Noir circuits
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Noir (nargo)
+        run: |
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          echo "$HOME/.nargo/bin" >> $GITHUB_PATH
+
+      - name: nargo --version
+        run: nargo --version
+
+      - name: nargo test (withdrawal)
+        working-directory: workspace/ptrans/app/circuits/withdrawal
+        run: nargo test
+
+      - name: nargo test (hash2)
+        working-directory: workspace/ptrans/app/circuits/hash2
+        run: nargo test
+
+      - name: nargo test (hashes)
+        working-directory: workspace/ptrans/app/circuits/hashes
+        run: nargo test
+
+  # ============================================================
+  # Merkle service: install + build
+  # ============================================================
+  merkle:
+    name: Merkle (Node.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workspace/ptrans/app/merkle
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: workspace/ptrans/app/merkle/pnpm-lock.yaml
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify circuits are present
+        run: |
+          test -f circuits/hash2.json || (echo "circuits/hash2.json missing" && exit 1)
+          test -f circuits/withdrawal.json || (echo "circuits/withdrawal.json missing" && exit 1)
+
+      - name: Syntax check
+        run: node --check src/server.js
+
+  # ============================================================
+  # Frontend: install + build + lint
+  # ============================================================
+  frontend:
+    name: Frontend (Vue)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workspace/ptrans/app/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: workspace/ptrans/app/frontend/pnpm-lock.yaml
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify generated clients
+        run: |
+          test -f src/generated/pdas/index.ts || (echo "generated clients missing" && exit 1)
+
+      - name: Type-check + build
+        run: pnpm run build
+
+  # ============================================================
+  # Общий чек: всё зелёное
+  # ============================================================
+  ci-success:
+    name: CI success
+    needs: [backend, prover, program, noir, merkle, frontend]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [ "${{ needs.backend.result }}" != "success" ] || \
+             [ "${{ needs.prover.result }}" != "success" ] || \
+             [ "${{ needs.program.result }}" != "success" ] || \
+             [ "${{ needs.noir.result }}" != "success" ] || \
+             [ "${{ needs.merkle.result }}" != "success" ] || \
+             [ "${{ needs.frontend.result }}" != "success" ]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          echo "All jobs passed ✅"
