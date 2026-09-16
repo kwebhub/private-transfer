@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Извлекаем предыдущий тег
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "${{ github.ref_name }}" | head -n 1 || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "Нет предыдущего тега — включаем всю историю"
+            RANGE="HEAD"
+          else
+            echo "Предыдущий тег: $PREV_TAG"
+            RANGE="$PREV_TAG..HEAD"
+          fi
+
+          # Генерируем changelog через git log
+          {
+            echo "## What's Changed"
+            echo ""
+            git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges | grep -E "^- (feat|fix|perf|refactor|docs|style|test|build|ci|chore)" || git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges
+            echo ""
+          } > /tmp/changelog.md
+
+          cat /tmp/changelog.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: /tmp/changelog.md
+          draft: false
+          prerelease: false
+          generate_release_notes: false
