@@ -97,6 +97,9 @@ jobs:
   program:
     name: Anchor program
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workspace/ptrans
 
     steps:
       - uses: actions/checkout@v4
@@ -112,8 +115,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-program-${{ hashFiles('Cargo.lock') }}
+            workspace/ptrans/target/
+          key: ${{ runner.os }}-cargo-program-${{ hashFiles('workspace/ptrans/Cargo.lock') }}
 
       - name: Install Solana CLI
         run: |
