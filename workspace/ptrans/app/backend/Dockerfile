@@ -7,35 +7,29 @@ FROM rust:1.89-slim AS builder
 
 WORKDIR /build
 
-# Системные зависимости для сборки (openssl, pkg-config)
+# Системные зависимости для сборки
 RUN apt-get update && apt-get install -y --no-install-recommends \
   libssl-dev \
   pkg-config \
   build-essential \
   && rm -rf /var/lib/apt/lists/*
 
-# 1. Копируем манифесты для кеша зависимостей
+# 1. Копируем манифесты
 COPY Cargo.toml Cargo.lock ./
 
-# 2. Создаём заглушку main.rs, чтобы собрать зависимости
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-
-# 3. Собираем зависимости (кешируется, если Cargo.toml/Cargo.lock не менялись)
-RUN cargo build --release && rm -rf src
-
-# 4. Копируем реальный код
+# 2. Копируем весь src + migrations (для сборки нужны lib.rs и main.rs)
 COPY src ./src
 COPY migrations ./migrations
 
-# 5. Пересобираем только наш код (зависимости уже в target/)
-RUN touch src/main.rs && cargo build --release
+# 3. Собираем release
+RUN cargo build --release
 
 # ---------- Stage 2: runtime ----------
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Runtime-зависимости: openssl + ca-certificates + curl (для healthcheck)
+# Runtime-зависимости
 RUN apt-get update && apt-get install -y --no-install-recommends \
   libssl3 \
   ca-certificates \
@@ -45,11 +39,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Копируем бинарь из builder
 COPY --from=builder /build/target/release/ptrans-backend /app/ptrans-backend
 
-# Копируем миграции (чтобы можно было применить через docker exec)
+# Копируем миграции
 COPY --from=builder /build/migrations /app/migrations
 
 # Непривилегированный пользователь
-RUN useradd -r -u 1001 -s /bin/false appuser && chown -R appuser:appuser /app
+RUN useradd -u 1001 -s /bin/false appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 4001
