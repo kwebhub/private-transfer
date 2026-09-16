@@ -1,7 +1,17 @@
 //! Indexer: слушает события `DepositEvent` и `WithdrawEvent`,
 //! пишет их в Postgres, обновляет Merkle Tree в Redis.
 //!
-//! Параметры (poll interval, page size, max pages) читаются из `Config`.
+//! ## Как работает
+//!
+//! 1. Каждые `INDEXER_POLL_INTERVAL_SECS` секунд вызывает `getSignaturesForAddress`.
+//! 2. Идёт по пагинации (`before`) до `last_signature` (в Redis).
+//! 3. Разворачивает — от старых к новым.
+//! 4. Для каждой tx парсит логи: `DepositEvent` (88 байт) / `WithdrawEvent` (80 байт).
+//! 5. Дедупликация: `commitment_exists` / `is_nullifier_used`.
+//! 6. При новом депозите — `tree::add_leaf` обновляет дерево.
+//! 7. Запоминает `last_signature`.
+//!
+//! Все параметры (poll interval, page size, max pages) — из `Config`.
 
 use crate::cache::Cache;
 use crate::config::Config;
@@ -12,6 +22,7 @@ use std::sync::Arc;
 use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
+/// Indexer пула: фоновый воркер для синхронизации с блокчейном.
 pub struct Indexer {
     db: Arc<Db>,
     cache: Arc<Cache>,
@@ -19,10 +30,14 @@ pub struct Indexer {
 }
 
 impl Indexer {
+    /// Создаёт новый indexer.
     pub fn new(db: Arc<Db>, cache: Arc<Cache>, config: Arc<Config>) -> Self {
         Self { db, cache, config }
     }
 
+    /// Запускает бесконечный цикл обработки событий.
+    ///
+    /// Никогда не возвращается, кроме паники.
     pub async fn run(self) {
         info!(pool = %self.config.pool_address, "🔄 Indexer started");
 
@@ -107,7 +122,6 @@ impl Indexer {
             }
         }
 
-        // Считаем lag от самого нового блока
         if let Some(first) = all_sigs.first() {
             if let Some(block_time) = first["blockTime"].as_i64() {
                 let now = std::time::SystemTime::now()

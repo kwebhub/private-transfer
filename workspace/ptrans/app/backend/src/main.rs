@@ -1,3 +1,17 @@
+//! zk-pool backend binary.
+//!
+//! Точка входа: загружает конфиг, инициализирует tracing/metrics/DB/Redis,
+//! синхронизирует Merkle Tree, запускает indexer и HTTP-сервер.
+//!
+//! ## Endpoints
+//!
+//! - `POST /api/withdraw` — проксирует witness в prover (5 req/min/IP).
+//! - `GET  /api/commitments` — список commitments (60 req/min/IP).
+//! - `GET  /api/root` — текущий root (60 req/min/IP).
+//! - `GET  /api/proof` — Merkle proof (60 req/min/IP).
+//! - `GET  /api/health` — health check.
+//! - `GET  /metrics` — Prometheus метрики.
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,

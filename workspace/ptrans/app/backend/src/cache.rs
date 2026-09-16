@@ -1,19 +1,29 @@
+//! Обёртка над Redis.
+//!
+//! Используется для:
+//! - **Кеша commitments** — `/api/commitments` (TTL 30 сек).
+//! - **Merkle Tree** — уровни, пустые хеши, корень, размер.
+//! - **Indexer** — последняя обработанная сигнатура.
+//! - **Rate limiting** — счётчики запросов по IP.
+
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 
+/// Обёртка над `ConnectionManager` Redis.
 #[derive(Clone)]
 pub struct Cache {
     conn: ConnectionManager,
 }
 
 impl Cache {
+    /// Создаёт соединение с Redis.
     pub async fn new(redis_url: &str) -> Result<Self, redis::RedisError> {
         let client = redis::Client::open(redis_url)?;
         let conn = ConnectionManager::new(client).await?;
         Ok(Self { conn })
     }
 
-    /// Установить строковое значение с TTL (секунды)
+    /// Устанавливает значение с TTL (в секундах).
     pub async fn set_ex(
         &self,
         key: &str,
@@ -24,19 +34,19 @@ impl Cache {
         conn.set_ex::<_, _, ()>(key, value, ttl_secs).await
     }
 
-    /// Установить строковое значение без TTL
+    /// Устанавливает значение без TTL.
     pub async fn set(&self, key: &str, value: &str) -> Result<(), redis::RedisError> {
         let mut conn = self.conn.clone();
         conn.set::<_, _, ()>(key, value).await
     }
 
-    /// Получить строковое значение
+    /// Читает значение. Возвращает `None`, если ключа нет.
     pub async fn get(&self, key: &str) -> Result<Option<String>, redis::RedisError> {
         let mut conn = self.conn.clone();
         conn.get(key).await
     }
 
-    /// Инвалидировать кеш для указанного pool
+    /// Инвалидирует кеш пула: `commitments:{pool}` и `root:{pool}`.
     pub async fn invalidate_pool(&self, pool_address: &str) -> Result<(), redis::RedisError> {
         let mut conn = self.conn.clone();
         let keys = vec![
@@ -47,10 +57,10 @@ impl Cache {
     }
 
     // ============================================================
-    // Merkle Tree методы
+    // Merkle Tree
     // ============================================================
 
-    /// Получить уровень дерева (JSON-массив hex-хешей)
+    /// Возвращает уровень дерева (`tree:{pool}:level:{d}`) как массив hex-хешей.
     pub async fn get_tree_level(
         &self,
         pool_address: &str,
@@ -66,7 +76,7 @@ impl Cache {
         }
     }
 
-    /// Записать уровень дерева
+    /// Записывает уровень дерева.
     pub async fn set_tree_level(
         &self,
         pool_address: &str,
@@ -78,7 +88,7 @@ impl Cache {
         self.set(&key, &json).await
     }
 
-    /// Получить root из кеша дерева
+    /// Возвращает текущий корень (`tree:{pool}:root`).
     pub async fn get_tree_root(
         &self,
         pool_address: &str,
@@ -87,7 +97,7 @@ impl Cache {
         self.get(&key).await
     }
 
-    /// Записать root в кеш дерева
+    /// Записывает текущий корень.
     pub async fn set_tree_root(
         &self,
         pool_address: &str,
@@ -97,7 +107,7 @@ impl Cache {
         self.set(&key, root).await
     }
 
-    /// Получить количество листьев в дереве
+    /// Возвращает количество листьев (`tree:{pool}:size`).
     pub async fn get_tree_size(
         &self,
         pool_address: &str,
@@ -109,7 +119,7 @@ impl Cache {
         }
     }
 
-    /// Записать количество листьев
+    /// Записывает количество листьев.
     pub async fn set_tree_size(
         &self,
         pool_address: &str,
@@ -119,7 +129,7 @@ impl Cache {
         self.set(&key, &size.to_string()).await
     }
 
-    /// Получить empty hash для уровня
+    /// Возвращает "пустой" хеш для уровня (`tree:{pool}:empty:{d}`).
     pub async fn get_empty_hash(
         &self,
         pool_address: &str,
@@ -129,7 +139,7 @@ impl Cache {
         self.get(&key).await
     }
 
-    /// Записать empty hash для уровня
+    /// Записывает "пустой" хеш для уровня.
     pub async fn set_empty_hash(
         &self,
         pool_address: &str,
@@ -140,7 +150,11 @@ impl Cache {
         self.set(&key, hash).await
     }
 
-    /// Получить последнюю обработанную сигнатуру для pool
+    // ============================================================
+    // Indexer
+    // ============================================================
+
+    /// Возвращает последнюю обработанную сигнатуру (`indexer:{pool}:last_signature`).
     pub async fn get_last_signature(
         &self,
         pool_address: &str,
@@ -149,7 +163,7 @@ impl Cache {
         self.get(&key).await
     }
 
-    /// Записать последнюю обработанную сигнатуру для pool
+    /// Записывает последнюю обработанную сигнатуру.
     pub async fn set_last_signature(
         &self,
         pool_address: &str,
@@ -159,23 +173,23 @@ impl Cache {
         self.set(&key, signature).await
     }
 
-    /// Инкрементировать счётчик запросов и получить текущее значение.
-    /// TTL устанавливается при первом запросе.
+    // ============================================================
+    // Rate limiting
+    // ============================================================
+
+    /// Инкрементирует счётчик и возвращает новое значение.
+    ///
+    /// TTL устанавливается **только** при первом запросе (`INCR` вернул 1).
     pub async fn incr_rate_limit(
         &self,
         key: &str,
         ttl_secs: u64,
     ) -> Result<u64, redis::RedisError> {
         let mut conn = self.conn.clone();
-
-        // INCR возвращает новое значение
         let count: u64 = conn.incr(key, 1u64).await?;
-
-        // Устанавливаем TTL только при первом запросе (count == 1)
         if count == 1 {
             conn.expire::<_, ()>(key, ttl_secs as i64).await?;
         }
-
         Ok(count)
     }
 }

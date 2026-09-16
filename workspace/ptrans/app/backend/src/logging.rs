@@ -1,9 +1,13 @@
 //! Инициализация `tracing` для backend.
 //!
 //! В dev — человекочитаемый формат с цветами.
-//! В production — JSON-формат (для ELK/Loki).
+//! В production (`APP_ENV=production`) — JSON-формат (для ELK/Loki).
 //!
 //! Уровень задаётся через `RUST_LOG` (по умолчанию `info`).
+//! Примеры:
+//! - `RUST_LOG=info` — только INFO и выше.
+//! - `RUST_LOG=debug` — всё, включая DEBUG.
+//! - `RUST_LOG=ptrans_backend=debug,info` — DEBUG только для нашего crate.
 
 use tracing_subscriber::{
     fmt, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
@@ -12,6 +16,11 @@ use tracing_subscriber::{
 /// Инициализирует глобальный tracing subscriber.
 ///
 /// Вызывается **один раз** в `main()` до всего остального.
+///
+/// Поведение:
+/// - читает `RUST_LOG` (по умолчанию `info`);
+/// - если `APP_ENV=production` — JSON-формат;
+/// - иначе — человекочитаемый формат.
 pub fn init() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
