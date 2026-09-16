@@ -13,7 +13,7 @@ env:
 
 jobs:
   # ============================================================
-  # Backend: fmt + clippy + build
+  # Backend: fmt + clippy + build + test
   # ============================================================
   backend:
     name: Backend (Rust)
@@ -21,6 +21,31 @@ jobs:
     defaults:
       run:
         working-directory: workspace/ptrans/app/backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ptrans
+          POSTGRES_PASSWORD: ptrans_dev_password
+          POSTGRES_DB: ptrans
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +67,7 @@ jobs:
           key: ${{ runner.os }}-cargo-backend-${{ hashFiles('workspace/ptrans/app/backend/Cargo.lock') }}
 
       - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config postgresql-client
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
@@ -52,6 +77,17 @@ jobs:
 
       - name: cargo build
         run: cargo build --release
+
+      - name: Apply DB migrations
+        run: |
+          PGPASSWORD=ptrans_dev_password psql -h localhost -U ptrans -d ptrans \
+            -f migrations/001_init.sql
+
+      - name: cargo test
+        run: cargo test --all-targets --verbose
+        env:
+          TEST_DATABASE_URL: postgres://ptrans:ptrans_dev_password@localhost:5432/ptrans
+          DATABASE_URL: postgres://ptrans:ptrans_dev_password@localhost:5432/ptrans
 
   # ============================================================
   # Prover: fmt + clippy + build
