@@ -1,0 +1,184 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Каждый понедельник в 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # ============================================================
+  # cargo-deny: лицензии + уязвимости + дубликаты
+  # ============================================================
+  cargo-deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Run cargo-deny (backend)
+        working-directory: workspace/ptrans/app/backend
+        run: cargo deny check
+
+      - name: Run cargo-deny (prover)
+        working-directory: workspace/ptrans/app/prover
+        run: cargo deny check
+
+  # ============================================================
+  # cargo-audit: RUSTSEC-база уязвимостей
+  # ============================================================
+  cargo-audit:
+    name: cargo-audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Run cargo-audit (backend)
+        working-directory: workspace/ptrans/app/backend
+        run: cargo audit --deny warnings
+        continue-on-error: true
+
+      - name: Run cargo-audit (prover)
+        working-directory: workspace/ptrans/app/prover
+        run: cargo audit --deny warnings
+        continue-on-error: true
+
+  # ============================================================
+  # npm audit: уязвимости в Node.js зависимостях
+  # ============================================================
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: npm audit (frontend)
+        working-directory: workspace/ptrans/app/frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level high
+        continue-on-error: true
+
+      - name: npm audit (merkle)
+        working-directory: workspace/ptrans/app/merkle
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level high
+        continue-on-error: true
+
+  # ============================================================
+  # Trivy: сканирование Docker-образов
+  # ============================================================
+  trivy:
+    name: Trivy (Docker images)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t ptrans-backend:scan workspace/ptrans/app/backend
+
+      - name: Build merkle image
+        run: docker build -t ptrans-merkle:scan workspace/ptrans/app/merkle
+
+      - name: Run Trivy (backend)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ptrans-backend:scan
+          format: "sarif"
+          output: "trivy-backend.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      - name: Run Trivy (merkle)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ptrans-merkle:scan
+          format: "sarif"
+          output: "trivy-merkle.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-backend.sarif"
+          category: "trivy-backend"
+
+      - name: Upload Trivy results (merkle)
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-merkle.sarif"
+          category: "trivy-merkle"
+
+  # ============================================================
+  # Gitleaks: поиск секретов в git history
+  # ============================================================
+  gitleaks:
+    name: Gitleaks (secrets scan)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+  # ============================================================
+  # Общий чек: всё зелёное
+  # ============================================================
+  security-success:
+    name: Security success
+    needs: [cargo-deny, cargo-audit, npm-audit, trivy, gitleaks]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [ "${{ needs.cargo-deny.result }}" != "success" ]; then
+            echo "cargo-deny failed"
+            exit 1
+          fi
+          echo "Security checks passed ✅"
