@@ -283,6 +283,14 @@ jobs:
         working-directory: workspace/ptrans/app/frontend
         run: pnpm run build
 
+      - name: Install Playwright browsers
+        working-directory: workspace/ptrans/app/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        working-directory: workspace/ptrans/app/frontend
+        run: npx playwright test --project=chromium --reporter=list
+
   # ============================================================
   # Общий чек: всё зелёное
   # ============================================================
