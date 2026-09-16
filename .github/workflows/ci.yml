@@ -142,7 +142,6 @@ jobs:
       - name: Install Noir (nargo)
         run: |
           curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
-          # noirup кладёт бинарь в ~/.nargo/bin
           echo "$HOME/.nargo/bin" >> $GITHUB_PATH
 
       - name: Verify nargo installation
@@ -179,6 +178,7 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 9
+          package_json_file: workspace/ptrans/app/merkle/package.json
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -215,6 +215,7 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 9
+          package_json_file: workspace/ptrans/app/frontend/package.json
 
       - name: Install Node.js
         uses: actions/setup-node@v4
