@@ -465,20 +465,32 @@ VITE_MIN_DEPOSIT=0.01
 
 ## 14. Roadmap
 
-- [] Anchor program (pool/deposit/withdraw)
-- [] Noir circuit + Sunspot Groth16
-- [] Backend (axum + Postgres + Redis)
-- [] Indexer + инкрементальное Merkle tree
-- [] Rate limiting
-- [] Prometheus + Grafana
-- [] start-all.sh
-- [] CI/CD (GitHub Actions)
-- [] Документация (docs/)
-- [] Тесты (unit + integration + e2e)
-- [] Рефакторинг (tracing, thiserror, doc-comments)
-- [] README с скриншотами и бейджами
-- [] GitHub flow (issue/PR templates, branch protection)
-- [] Threat model + security checklist
+- [ ] Anchor program (pool/deposit/withdraw)
+- [ ] Noir circuit + Sunspot Groth16
+- [ ] Backend (axum + Postgres + Redis)
+- [ ] Indexer + инкрементальное Merkle tree
+- [ ] Rate limiting
+- [ ] Prometheus + Grafana
+- [ ] start-all.sh
+- [ ] CI/CD (GitHub Actions)
+- [ ] Документация (docs/)
+- [ ] Тесты (unit + integration + e2e)
+- [ ] Рефакторинг (tracing, thiserror, doc-comments)
+- [ ] README с скриншотами и бейджами
+- [ ] GitHub flow (issue/PR templates, branch protection)
+- [ ] Threat model + security checklist
+
+### Масштабирование (post-MVP)
+
+- [ ] **Очередь задач на Redis Streams для prover.**
+  Проблема: `sunspot prove` — однопоточный CLI, 30-60 сек на proof.
+  Решение: Redis Streams (`proof_queue` + `proof_results:{request_id}`).
+  Плюсы: параллелизм, at-least-once delivery, ноль новой инфраструктуры.
+  Почему не Kafka: избыточна для десятков запросов в час.
+- [ ] **Горизонтальное масштабирование prover.**
+  2-3 воркера, читающих из `proof_queue` через `XREADGROUP`.
+- [ ] **Мониторинг очереди.**
+  Метрики: `ptrans_prover_queue_depth`, `ptrans_prover_processing_time`.
 
 ---
 
