@@ -170,6 +170,10 @@ jobs:
       - name: anchor build
         run: anchor build
 
+      - name: cargo test (program)
+        working-directory: workspace/ptrans/programs/ptrans
+        run: cargo test --all-targets
+
   # ============================================================
   # Noir circuits: nargo test
   # ============================================================
