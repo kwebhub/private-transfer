@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.89.0"
 
+[lib]
+name = "ptrans_backend"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ptrans-backend"
+path = "src/main.rs"
+
 [dependencies]
 # HTTP-сервер
 axum = "0.7"
@@ -20,17 +28,17 @@ anyhow = "1.0"
 
 # База данных
 sqlx = { version = "0.7", default-features = false, features = [
-  "runtime-tokio",
-  "tls-native-tls",
-  "postgres",
-  "uuid",
-  "chrono",
-  "json",
+    "runtime-tokio",
+    "tls-native-tls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "json",
 ] }
 redis = { version = "0.25", features = [
-  "tokio-comp",
-  "ahash",
-  "connection-manager",
+    "tokio-comp",
+    "ahash",
+    "connection-manager",
 ] }
 
 # Утилиты

@@ -1,11 +1,3 @@
-mod cache;
-mod config;
-mod db;
-mod indexer;
-mod metrics;
-mod rate_limit;
-mod tree;
-
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -15,6 +7,7 @@ use axum::{
 };
 use axum_prometheus::PrometheusMetricLayer;
 use metrics_exporter_prometheus::PrometheusBuilder;
+use ptrans_backend::{cache, db, indexer, metrics, rate_limit, tree};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -234,7 +227,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     // 1. Устанавливаем глобальный Prometheus recorder
-    //    install_recorder() делает metrics::counter!() доступным
     let prometheus_handle = PrometheusBuilder::new()
         .install_recorder()
         .map_err(|e| format!("Failed to install Prometheus recorder: {}", e))?;
@@ -313,7 +305,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Записываем начальный размер дерева
     if current_size > 0 {
         metrics::record_deposit(current_size as i64 - 1);
         println!("📊 Recorded tree size: {}", current_size);
@@ -335,10 +326,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         indexer.run().await;
     });
 
-    // 2. HTTP middleware для автоматических HTTP-метрик
     let (prometheus_layer, _metric_handle) = PrometheusMetricLayer::pair();
 
-    // Роуты с разными rate limit + cache в extensions
     let withdraw_routes = Router::new()
         .route("/api/withdraw", post(handle_withdraw))
         .layer(middleware::from_fn(rate_limit::rate_limit_withdraw))
@@ -357,7 +346,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/health", get(handle_health))
         .with_state(state.clone());
 
-    // 3. /metrics — использует тот же recorder
     let metrics_handle_clone = prometheus_handle.clone();
     let metrics_route = Router::new().route(
         "/metrics",
