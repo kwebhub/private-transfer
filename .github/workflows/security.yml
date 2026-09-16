@@ -116,7 +116,7 @@ jobs:
         run: docker build -t ptrans-merkle:scan workspace/ptrans/app/merkle
 
       - name: Run Trivy (backend)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ptrans-backend:scan
           format: "sarif"
@@ -125,7 +125,7 @@ jobs:
           exit-code: "0"
 
       - name: Run Trivy (merkle)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ptrans-merkle:scan
           format: "sarif"
