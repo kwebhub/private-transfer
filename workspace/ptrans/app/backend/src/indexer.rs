@@ -1,41 +1,29 @@
+//! Indexer: слушает события `DepositEvent` и `WithdrawEvent`,
+//! пишет их в Postgres, обновляет Merkle Tree в Redis.
+//!
+//! Параметры (poll interval, page size, max pages) читаются из `Config`.
+
 use crate::cache::Cache;
+use crate::config::Config;
 use crate::db::Db;
 use crate::metrics;
 use crate::tree;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration, Instant};
 
-const POLL_INTERVAL_SECS: u64 = 5;
-const PAGE_SIZE: usize = 100;
-const MAX_PAGES: usize = 10;
-
 pub struct Indexer {
     db: Arc<Db>,
     cache: Arc<Cache>,
-    rpc_url: String,
-    pool_address: String,
-    merkle_url: String,
+    config: Arc<Config>,
 }
 
 impl Indexer {
-    pub fn new(
-        db: Arc<Db>,
-        cache: Arc<Cache>,
-        rpc_url: String,
-        pool_address: String,
-        merkle_url: String,
-    ) -> Self {
-        Self {
-            db,
-            cache,
-            rpc_url,
-            pool_address,
-            merkle_url,
-        }
+    pub fn new(db: Arc<Db>, cache: Arc<Cache>, config: Arc<Config>) -> Self {
+        Self { db, cache, config }
     }
 
     pub async fn run(self) {
-        println!("🔄 Indexer started for pool {}", self.pool_address);
+        println!("🔄 Indexer started for pool {}", self.config.pool_address);
 
         loop {
             let start = Instant::now();
@@ -44,7 +32,7 @@ impl Indexer {
                 metrics::record_indexer_error();
             }
             metrics::observe_indexer_tick(start.elapsed().as_secs_f64());
-            sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
+            sleep(Duration::from_secs(self.config.indexer_poll_interval_secs)).await;
         }
     }
 
@@ -52,7 +40,7 @@ impl Indexer {
         let client = reqwest::Client::new();
         let last_processed = self
             .cache
-            .get_last_signature(&self.pool_address)
+            .get_last_signature(&self.config.pool_address)
             .await
             .unwrap_or(None);
 
@@ -60,14 +48,17 @@ impl Indexer {
         let mut all_sigs: Vec<serde_json::Value> = Vec::new();
         let mut reached_last = false;
 
-        for _page in 0..MAX_PAGES {
-            let mut params = serde_json::json!([self.pool_address, { "limit": PAGE_SIZE }]);
+        for _page in 0..self.config.indexer_max_pages {
+            let mut params = serde_json::json!([
+                self.config.pool_address,
+                { "limit": self.config.indexer_page_size }
+            ]);
             if let Some(b) = &before {
                 params[1]["before"] = serde_json::json!(b);
             }
 
             let sigs_resp: serde_json::Value = client
-                .post(&self.rpc_url)
+                .post(&self.config.solana_rpc_url)
                 .json(&serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": 1,
@@ -153,7 +144,7 @@ impl Indexer {
         if let Some(newest) = newest_signature {
             let _ = self
                 .cache
-                .set_last_signature(&self.pool_address, &newest)
+                .set_last_signature(&self.config.pool_address, &newest)
                 .await;
 
             if reached_last {
@@ -176,7 +167,7 @@ impl Indexer {
         signature: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let tx_resp: serde_json::Value = client
-            .post(&self.rpc_url)
+            .post(&self.config.solana_rpc_url)
             .json(&serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -226,17 +217,18 @@ impl Indexer {
                             leaf_index,
                             commitment,
                             new_root,
-                            &self.pool_address,
+                            &self.config.pool_address,
                             signature,
                         )
                         .await?;
 
                     match tree::add_leaf(
                         &self.cache,
-                        &self.merkle_url,
-                        &self.pool_address,
+                        &self.config.merkle_url,
+                        &self.config.pool_address,
                         leaf_index as usize,
                         &commitment_hex,
+                        self.config.merkle_tree_depth,
                     )
                     .await
                     {
@@ -253,7 +245,7 @@ impl Indexer {
                         }
                     }
 
-                    let _ = self.cache.invalidate_pool(&self.pool_address).await;
+                    let _ = self.cache.invalidate_pool(&self.config.pool_address).await;
                 }
             }
 
@@ -266,7 +258,7 @@ impl Indexer {
                     self.db
                         .save_nullifier(
                             nullifier_hash,
-                            &self.pool_address,
+                            &self.config.pool_address,
                             &bs58::encode(recipient).into_string(),
                             0,
                             signature,

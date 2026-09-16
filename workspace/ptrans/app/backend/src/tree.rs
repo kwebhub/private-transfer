@@ -1,9 +1,16 @@
+//! Инкрементальное Merkle Tree в Redis.
+//!
+//! Дерево хранится уровнями: `tree:{pool}:level:{d}`.
+//! Для каждого уровня — пустой хеш: `tree:{pool}:empty:{d}`.
+//! Корень: `tree:{pool}:root`, размер: `tree:{pool}:size`.
+//!
+//! Глубина дерева передаётся из `Config`.
+
 use crate::cache::Cache;
 use crate::metrics;
 use std::sync::Arc;
 use std::time::Instant;
 
-const TREE_DEPTH: u32 = 20;
 const EMPTY_LEAF: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 async fn poseidon2_hash(
@@ -42,6 +49,7 @@ pub async fn init_empty_tree(
     cache: &Arc<Cache>,
     merkle_url: &str,
     pool_address: &str,
+    depth: u32,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = reqwest::Client::new();
 
@@ -51,7 +59,7 @@ pub async fn init_empty_tree(
         .await?;
 
     let mut current = EMPTY_LEAF.to_string();
-    for d in 1..=TREE_DEPTH {
+    for d in 1..=depth {
         current = poseidon2_hash(&client, merkle_url, &current, &current).await?;
         cache.set_empty_hash(pool_address, d, &current).await?;
         cache
@@ -62,7 +70,10 @@ pub async fn init_empty_tree(
     cache.set_tree_root(pool_address, &current).await?;
     cache.set_tree_size(pool_address, 0).await?;
 
-    println!("🌳 Initialized empty tree: root={}", current);
+    println!(
+        "🌳 Initialized empty tree (depth={}): root={}",
+        depth, current
+    );
     Ok(())
 }
 
@@ -72,6 +83,7 @@ pub async fn add_leaf(
     pool_address: &str,
     leaf_index: usize,
     commitment: &str,
+    depth: u32,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let start = Instant::now();
     let client = reqwest::Client::new();
@@ -100,7 +112,7 @@ pub async fn add_leaf(
     let mut idx = leaf_index;
     let mut current_level = level0;
 
-    for d in 0..TREE_DEPTH as usize {
+    for d in 0..depth as usize {
         let sibling_idx = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
 
         let sibling = if sibling_idx < current_level.len() {
@@ -160,13 +172,14 @@ pub async fn get_proof(
     cache: &Arc<Cache>,
     pool_address: &str,
     leaf_index: usize,
+    depth: u32,
 ) -> Result<(Vec<String>, Vec<bool>, String), Box<dyn std::error::Error + Send + Sync>> {
-    let mut proof = Vec::with_capacity(TREE_DEPTH as usize);
-    let mut is_even = Vec::with_capacity(TREE_DEPTH as usize);
+    let mut proof = Vec::with_capacity(depth as usize);
+    let mut is_even = Vec::with_capacity(depth as usize);
 
     let mut idx = leaf_index;
 
-    for d in 0..TREE_DEPTH {
+    for d in 0..depth {
         let level = cache
             .get_tree_level(pool_address, d)
             .await?
