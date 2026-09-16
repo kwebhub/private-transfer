@@ -139,10 +139,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Noir (nargo)
+      - name: Install Noir (noirup + nargo)
         run: |
           curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
           echo "$HOME/.nargo/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.nargo/bin:$PATH"
+          "$HOME/.nargo/bin/noirup"
 
       - name: Verify nargo installation
         run: |
@@ -167,9 +169,6 @@ jobs:
   merkle:
     name: Merkle (Node.js)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: workspace/ptrans/app/merkle
 
     steps:
       - uses: actions/checkout@v4
@@ -178,7 +177,6 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 9
-          package_json_file: workspace/ptrans/app/merkle/package.json
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -188,25 +186,25 @@ jobs:
           cache-dependency-path: workspace/ptrans/app/merkle/pnpm-lock.yaml
 
       - name: pnpm install
+        working-directory: workspace/ptrans/app/merkle
         run: pnpm install --frozen-lockfile
 
       - name: Verify circuits are present
+        working-directory: workspace/ptrans/app/merkle
         run: |
           test -f circuits/hash2.json || (echo "circuits/hash2.json missing" && exit 1)
           test -f circuits/withdrawal.json || (echo "circuits/withdrawal.json missing" && exit 1)
 
       - name: Syntax check
+        working-directory: workspace/ptrans/app/merkle
         run: node --check src/server.js
 
   # ============================================================
-  # Frontend: install + build + lint
+  # Frontend: install + build
   # ============================================================
   frontend:
     name: Frontend (Vue)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: workspace/ptrans/app/frontend
 
     steps:
       - uses: actions/checkout@v4
@@ -215,7 +213,6 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 9
-          package_json_file: workspace/ptrans/app/frontend/package.json
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -225,13 +222,16 @@ jobs:
           cache-dependency-path: workspace/ptrans/app/frontend/pnpm-lock.yaml
 
       - name: pnpm install
+        working-directory: workspace/ptrans/app/frontend
         run: pnpm install --frozen-lockfile
 
       - name: Verify generated clients
+        working-directory: workspace/ptrans/app/frontend
         run: |
           test -f src/generated/pdas/index.ts || (echo "generated clients missing" && exit 1)
 
       - name: Type-check + build
+        working-directory: workspace/ptrans/app/frontend
         run: pnpm run build
 
   # ============================================================
