@@ -7,6 +7,7 @@ pub mod cache;
 pub mod config;
 pub mod db;
 pub mod indexer;
+pub mod logging;
 pub mod metrics;
 pub mod rate_limit;
 pub mod tree;

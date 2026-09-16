@@ -10,6 +10,7 @@ use crate::metrics;
 use crate::tree;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration, Instant};
+use tracing::{debug, error, info, warn};
 
 pub struct Indexer {
     db: Arc<Db>,
@@ -23,12 +24,12 @@ impl Indexer {
     }
 
     pub async fn run(self) {
-        println!("🔄 Indexer started for pool {}", self.config.pool_address);
+        info!(pool = %self.config.pool_address, "🔄 Indexer started");
 
         loop {
             let start = Instant::now();
             if let Err(e) = self.tick().await {
-                eprintln!("⚠️ Indexer tick error: {}", e);
+                error!(error = %e, "indexer tick error");
                 metrics::record_indexer_error();
             }
             metrics::observe_indexer_tick(start.elapsed().as_secs_f64());
@@ -133,7 +134,7 @@ impl Indexer {
             };
 
             if let Err(e) = self.process_transaction(&client, signature).await {
-                eprintln!("⚠️ Failed to process {}: {}", signature, e);
+                warn!(signature = %signature, error = %e, "failed to process transaction");
                 metrics::record_indexer_error();
                 continue;
             }
@@ -148,12 +149,12 @@ impl Indexer {
                 .await;
 
             if reached_last {
-                println!("🔄 Indexer caught up to {}", &newest[..8]);
+                debug!(signature = %&newest[..8], "indexer caught up");
             } else {
-                println!(
-                    "🔄 Indexer processed {} new transactions (up to {})",
-                    all_sigs.len(),
-                    &newest[..8]
+                info!(
+                    count = all_sigs.len(),
+                    signature = %&newest[..8],
+                    "indexer processed new transactions"
                 );
             }
         }
@@ -233,14 +234,16 @@ impl Indexer {
                     .await
                     {
                         Ok(root) => {
-                            println!(
-                                "📥 Indexed deposit: leaf={} commitment={} → tree root: {}",
-                                leaf_index, commitment_hex, root
+                            info!(
+                                leaf = leaf_index,
+                                commitment = %commitment_hex,
+                                root = %root,
+                                "📥 Indexed deposit"
                             );
                             metrics::record_deposit(leaf_index);
                         }
                         Err(e) => {
-                            eprintln!("⚠️ Failed to add leaf to tree: {}", e);
+                            error!(error = %e, "failed to add leaf to tree");
                             metrics::record_tree_error();
                         }
                     }
@@ -265,9 +268,9 @@ impl Indexer {
                         )
                         .await?;
 
-                    println!(
-                        "📤 Indexed withdraw: nullifier={}",
-                        hex::encode(nullifier_hash)
+                    info!(
+                        nullifier = %hex::encode(nullifier_hash),
+                        "📤 Indexed withdraw"
                     );
                     metrics::record_withdrawal();
                 }

@@ -70,10 +70,7 @@ pub async fn init_empty_tree(
     cache.set_tree_root(pool_address, &current).await?;
     cache.set_tree_size(pool_address, 0).await?;
 
-    println!(
-        "🌳 Initialized empty tree (depth={}): root={}",
-        depth, current
-    );
+    tracing::info!(depth = depth, root = %current, "🌳 Initialized empty tree");
     Ok(())
 }
 
@@ -164,7 +161,7 @@ pub async fn add_leaf(
 
     metrics::observe_add_leaf(start.elapsed().as_secs_f64());
 
-    println!("🌳 Added leaf {} → new root: {}", leaf_index, root);
+    tracing::info!(leaf_index = leaf_index, root = %root, "🌳 Added leaf");
     Ok(root)
 }
 
