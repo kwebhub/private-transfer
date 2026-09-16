@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/kwebhub/private-transfer/tree/main/docs
+    about: Architecture, ZK explained, deployment, threat model
+  - name: 💬 Discussions
+    url: https://github.com/kwebhub/private-transfer/discussions
+    about: Ask questions, share ideas, discuss the project
+  - name: 🔒 Security
+    url: https://github.com/kwebhub/private-transfer/security/policy
+    about: Report security vulnerabilities (do NOT create public issue)
