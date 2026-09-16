@@ -465,20 +465,28 @@ VITE_MIN_DEPOSIT=0.01
 
 ## 14. Roadmap
 
-- [ ] Anchor program (pool/deposit/withdraw)
-- [ ] Noir circuit + Sunspot Groth16
-- [ ] Backend (axum + Postgres + Redis)
-- [ ] Indexer + инкрементальное Merkle tree
-- [ ] Rate limiting
-- [ ] Prometheus + Grafana
-- [ ] start-all.sh
-- [ ] CI/CD (GitHub Actions)
-- [ ] Документация (docs/)
+- [x] Anchor program (pool/deposit/withdraw)
+- [x] Noir circuit + Sunspot Groth16
+- [x] Backend (axum + Postgres + Redis)
+- [x] Indexer + инкрементальное Merkle tree
+- [x] Rate limiting
+- [x] Prometheus + Grafana
+- [x] start-all.sh
+- [x] CI/CD (GitHub Actions: CI + Docker + Release)
+- [x] Docker images → GHCR
+- [x] Первый релиз v0.1.0
+- [x] Документация (`docs/`: architecture, zk-explained, deployment, threat-model)
+- [ ] GitHub flow (issue/PR templates, branch protection, CONTRIBUTING, SECURITY)
 - [ ] Тесты (unit + integration + e2e)
-- [ ] Рефакторинг (tracing, thiserror, doc-comments)
-- [ ] README с скриншотами и бейджами
-- [ ] GitHub flow (issue/PR templates, branch protection)
-- [ ] Threat model + security checklist
+- [ ] Рефакторинг:
+  - [ ] `tracing` вместо `println!`
+  - [ ] `thiserror` вместо `Box<dyn Error>`
+  - [ ] **Перенести весь хардкод в `.env`** (программы, frontend, backend, merkle, prover)
+  - [ ] doc-comments для публичных функций
+- [ ] Безопасность: cargo-deny, trivy, расширение threat-model
+- [ ] Финальная документация:
+  - [ ] **README на EN + RU** (папки `docs/en/`, `docs/ru/`)
+  - [ ] Скриншоты, badges, demo
 
 ### Масштабирование (post-MVP)
 
