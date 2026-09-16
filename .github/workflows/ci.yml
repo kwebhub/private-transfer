@@ -84,7 +84,7 @@ jobs:
             -f migrations/001_init.sql
 
       - name: cargo test
-        run: cargo test --all-targets --verbose
+        run: cargo test --all-targets --verbose -- --test-threads=1
         env:
           TEST_DATABASE_URL: postgres://ptrans:ptrans_dev_password@localhost:5432/ptrans
           DATABASE_URL: postgres://ptrans:ptrans_dev_password@localhost:5432/ptrans
