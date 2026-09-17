@@ -9,7 +9,6 @@
 # For detailed Anchor documentation, see:
 # https://www.anchor-lang.com/docs
 #
-# Recover keypair phrase: cinnamon false fitness napkin aisle palm supreme clump swallow normal suffer soda
 
 SHELL := /bin/bash
 DOCKER_COMPOSE ?= docker compose

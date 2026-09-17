@@ -45,6 +45,9 @@ test-ledger/
 !**/.env.example
 
 # ============ Solana keypairs ============
+solana/id*.json
+solana/*.json
+!solana/.gitkeep
 *.json.keypair
 **/id.json
 **/*-keypair.json
@@ -79,5 +82,3 @@ grafana-data/
 *.bak
 /tmp/
 workspace/sunspot/
-journal.md
-
