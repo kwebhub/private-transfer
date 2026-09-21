@@ -3,7 +3,7 @@
 # ============================================================
 
 # ---------- Stage 1: builder ----------
-FROM rust:1.89-slim AS builder
+FROM rust:1.97-slim AS builder
 
 WORKDIR /build
 
