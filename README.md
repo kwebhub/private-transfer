@@ -13,6 +13,13 @@
 
 ---
 
+==============================================================================================
+|                                                                                            |
+| This project has been terminated due to an undetected error. See the zpool-solana project. |
+|                                                                                            |
+==============================================================================================
+---
+
 **zk-pool** is a private pool for SOL transfers. A user deposits SOL into a shared
 vault, receives a *deposit note* (two secrets), and can later withdraw SOL to
 **any** address without revealing the link between deposit and withdrawal.
