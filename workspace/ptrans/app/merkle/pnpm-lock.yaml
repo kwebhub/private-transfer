@@ -12,8 +12,8 @@ importers:
         specifier: ^10.0.1
         version: 10.1.0
       '@noir-lang/noir_js':
-        specifier: 1.0.0-rc.1
-        version: 1.0.0-rc.1
+        specifier: 1.0.0-rc.6
+        version: 1.0.0-rc.6
       fastify:
         specifier: ^5.2.0
         version: 5.12.4
@@ -41,17 +41,17 @@ packages:
   '@fastify/proxy-addr@5.1.0':
     resolution: {integrity: sha512-INS+6gh91cLUjB+PVHfu1UqcB76Sqtpyp7bnL+FYojhjygvOPA9ctiD/JDKsyD9Xgu4hUhCSJBPig/w7duNajw==}
 
-  '@noir-lang/acvm_js@1.0.0-rc.1':
-    resolution: {integrity: sha512-sBKnjUsqiczOHkMP29vOto2cyHRVswv4QHsePKZd3qdetLxRx+wzS711/8CG7wqgB2GSo6VuQKi0wtm1QN4eGw==}
+  '@noir-lang/acvm_js@1.0.0-rc.6':
+    resolution: {integrity: sha512-lGfiYGDQky6QtxVHtz6pJyGaOVR5y3SETlF1MuR6DwVIrK42m3LJkWfM/+duY0tWLI1SM0T61VGLT03cXgTuyQ==}
 
-  '@noir-lang/noir_js@1.0.0-rc.1':
-    resolution: {integrity: sha512-f2wuONIwJZSGNfXVJPX2iIwEi/IVPryjF4iwpDscxLx4XH4+TzoKI9vayPeAjjaARIBpb8jbcRHXmxeYP3JmTA==}
+  '@noir-lang/noir_js@1.0.0-rc.6':
+    resolution: {integrity: sha512-dpKcx/+Skrgsny2/+XP+aQMwTyfdTC1akFpLco95pwYQ34P1uhogVECz9Fsg/4571w7P2ialMqLpV0KOmVZqvw==}
 
-  '@noir-lang/noirc_abi@1.0.0-rc.1':
-    resolution: {integrity: sha512-yjxo3Md29kN7Z7Kc0+MukD+gNZXK3OM5GH/LP1kD+g163SNmaYY+H5E9MNgPplsBH5naNqnfo/r5d35rPXQKnA==}
+  '@noir-lang/noirc_abi@1.0.0-rc.6':
+    resolution: {integrity: sha512-wxMX+8GV9sAABu8P9cY++N6vduIBq0BEc2jDxsd0rwPHkQnpH69/jNWIkv2Co3wMiVmDoIRLkjJAZazMZVdhUg==}
 
-  '@noir-lang/types@1.0.0-rc.1':
-    resolution: {integrity: sha512-HmIPNyuDciTtYDu2gFkDPhkQyr79yMN7TMHmoxvXwkvmuV0Hfbm+nW2OP/mGZW7CmrPqy7MGQN8wDuQ6XBOo8w==}
+  '@noir-lang/types@1.0.0-rc.6':
+    resolution: {integrity: sha512-3pkaFwuRjbSfXUlqnrgORUxlb14nwnjrKX5oBGQiAs8z49+KfzvBMQNkPqJSD0lKNmFcZx7OydQaAhW35Cg+VQ==}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -139,8 +139,8 @@ packages:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
     engines: {node: '>=14.0.0'}
 
-  pako@3.0.1:
-    resolution: {integrity: sha512-GupotUUI0mlhugKjUs4bjOwLt3nrehy9Ys2dxC0GtgVef5cnKggkDMmf2bq2poCCuVXopWPmqsc9VDT2iJUy+w==}
+  pako@3.0.2:
+    resolution: {integrity: sha512-uBv6IT2aT1A78iU6dpNEbf6+CyhlV/6g9JlJs9kpgjFGFhruIICVRysF/W0SLzXg5+hCl+KroH7e4YUyfEmgLg==}
 
   pino-abstract-transport@3.0.0:
     resolution: {integrity: sha512-wlfUczU+n7Hy/Ha5j9a/gZNy7We5+cXp8YL+X+PG8S0KXxw7n/JXA3c46Y0zQznIJ83URJiwy7Lh56WLokNuxg==}
@@ -247,20 +247,20 @@ snapshots:
       '@fastify/forwarded': 3.0.2
       ipaddr.js: 2.5.0
 
-  '@noir-lang/acvm_js@1.0.0-rc.1': {}
+  '@noir-lang/acvm_js@1.0.0-rc.6': {}
 
-  '@noir-lang/noir_js@1.0.0-rc.1':
+  '@noir-lang/noir_js@1.0.0-rc.6':
     dependencies:
-      '@noir-lang/acvm_js': 1.0.0-rc.1
-      '@noir-lang/noirc_abi': 1.0.0-rc.1
-      '@noir-lang/types': 1.0.0-rc.1
-      pako: 3.0.1
+      '@noir-lang/acvm_js': 1.0.0-rc.6
+      '@noir-lang/noirc_abi': 1.0.0-rc.6
+      '@noir-lang/types': 1.0.0-rc.6
+      pako: 3.0.2
 
-  '@noir-lang/noirc_abi@1.0.0-rc.1':
+  '@noir-lang/noirc_abi@1.0.0-rc.6':
     dependencies:
-      '@noir-lang/types': 1.0.0-rc.1
+      '@noir-lang/types': 1.0.0-rc.6
 
-  '@noir-lang/types@1.0.0-rc.1': {}
+  '@noir-lang/types@1.0.0-rc.6': {}
 
   '@pinojs/redact@0.4.0': {}
 
@@ -361,7 +361,7 @@ snapshots:
 
   on-exit-leak-free@2.1.2: {}
 
-  pako@3.0.1: {}
+  pako@3.0.2: {}
 
   pino-abstract-transport@3.0.0:
     dependencies:
